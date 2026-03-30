@@ -386,9 +386,10 @@ class PhaseRunner:
 """
 
     def run_expand(self) -> bool:
-        """expand：将原型扩写为完整版本
+        """expand：将原型扩写为完整版本（带并发控制）
 
-        基于已有内容，扩写到完整的6人+5-7事件
+        Phase 1: 扩写事件线和信息矩阵（单次 LLM 调用）
+        Phase 2: 并行生成 4 个新角色剧本（RateLimiter 控制并发）
         """
         self.console.print("[cyan]正在 expand 原型为完整版本...[/cyan]")
 
@@ -397,43 +398,82 @@ class PhaseRunner:
             return False
 
         try:
+            from murder_wizard.llm.rate_limit import RateLimiter
+
+            # 读取原型内容
+            outline = self.state.outline or ""
+            mechanism = (self.session.project_path / "mechanism.md").read_text(encoding="utf-8") if (self.session.project_path / "mechanism.md").exists() else ""
+            characters = (self.session.project_path / "characters.md").read_text(encoding="utf-8") if (self.session.project_path / "characters.md").exists() else ""
+
+            # ========== Phase 1: 扩写事件线和信息矩阵 ==========
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
-                task = progress.add_task("expand 扩写中...", total=None)
+                task = progress.add_task("扩写事件线和信息矩阵...", total=None)
 
-                # 读取原型内容
-                outline = self.state.outline or ""
-                mechanism = (self.session.project_path / "mechanism.md").read_text(encoding="utf-8") if (self.session.project_path / "mechanism.md").exists() else ""
-                characters = (self.session.project_path / "characters.md").read_text(encoding="utf-8") if (self.session.project_path / "characters.md").exists() else ""
-
-                expand_prompt = f"""将以下原型剧本扩写为完整版本：
-
-原型大纲：
-{outline}
-
-原型机制：
-{mechanism}
-
-原型角色：
-{characters}
-
-扩写要求：
-1. 角色从2人扩写到6人
-2. 事件从3条扩写到5-7条
-3. 保持原有角色设定不变
-4. 新角色要与原有角色逻辑自洽
-5. 更新信息矩阵
-6. 更新角色剧本
-
-格式：Markdown
-"""
-
-                response = self._call_llm(
-                    expand_prompt,
+                phase1_prompt = self._build_expand_phase1_prompt(outline, mechanism, characters)
+                phase1_response = self._call_llm(
+                    phase1_prompt,
                     system="你是一个专业的剧本杀作家，擅长将简化原型扩写为完整剧本。",
-                    operation="expand"
+                    operation="expand_phase1"
                 )
 
-            # 备份原文件
+            self._show_cost_warning(phase1_response.cost)
+
+            # ========== Phase 2: 并行生成 4 个新角色剧本 ==========
+            self.console.print("[cyan]并行生成新角色剧本（最多2个并发）...[/cyan]")
+
+            # 解析 Phase 1 结果，确定 4 个新角色及其设定
+            new_chars_prompt = self._build_new_chars_prompt(phase1_response.content)
+            new_chars_response = self._call_llm(
+                new_chars_prompt,
+                system="你是一个专业的剧本杀作家，擅长从扩写内容中提取角色设定。",
+                operation="expand_parse_chars"
+            )
+
+            # 解析出新角色列表（从 Phase 1 结果中提取）
+            char_names = self._parse_new_character_names(new_chars_response.content, existing_count=2)
+            if not char_names:
+                # 降级：无法解析时使用单次扩写
+                self.console.print("[yellow]无法解析新角色，并发生成跳过，使用单次扩写[/yellow]")
+                return self._expand_single_pass(outline, mechanism, characters, phase1_response.content)
+
+            self.console.print(f"[cyan]新角色：{', '.join(char_names)}[/cyan]")
+
+            # 并行生成角色剧本
+            limiter = RateLimiter(max_concurrent=2, delay_between_calls=1.0)
+
+            # 构建并行任务：每个新角色一个任务
+            tasks = []
+            for char_name in char_names:
+                tasks.append((
+                    char_name,
+                    (outline, mechanism, phase1_response.content, char_name),
+                    {},
+                ))
+
+            def call_char_script(args):
+                o, m, p1, name = args
+                prompt = self._build_single_char_prompt(o, m, p1, name)
+                return self._call_llm(
+                    prompt,
+                    system="你是一个专业的剧本杀作家，每位角色的剧本都要符合其身份、背景和视角。",
+                    operation=f"expand_char_{name}"
+                )
+
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成角色剧本...", total=None)
+                char_results = limiter.run_parallel(tasks, call_char_script)
+
+            # 汇总结果
+            total_cost = phase1_response.cost + new_chars_response.cost
+            char_contents = []
+            for char_name, response in char_results:
+                if response is not None:
+                    char_contents.append(f"\n\n## {char_name}\n\n{response.content}")
+                    total_cost += response.cost
+                else:
+                    self.console.print(f"[red]角色 {char_name} 生成失败[/red]")
+
+            # ========== 保存结果 ==========
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             if (self.session.project_path / "characters.md").exists():
                 (self.session.project_path / "characters.md").rename(
@@ -444,7 +484,181 @@ class PhaseRunner:
                     self.session.project_path / f"information_matrix.md.proto.{timestamp}"
                 )
 
-            # 保存新文件
+            # 组装完整角色剧本
+            full_script = self._assemble_expanded_script(
+                phase1_response.content, char_contents, char_names
+            )
+
+            chars_file = self.session.project_path / "characters.md"
+            chars_file.write_text(full_script, encoding="utf-8")
+
+            # 保存更新后的信息矩阵（从 Phase 1 结果提取）
+            matrix_content = self._extract_matrix_from_phase1(phase1_response.content)
+            if matrix_content:
+                matrix_file = self.session.project_path / "information_matrix.md"
+                matrix_file.write_text(matrix_content, encoding="utf-8")
+
+            self.state.characters = {"raw": full_script}
+            self.state.is_prototype = False
+            self.session.save(self.state)
+
+            self.console.print(f"[green]expand 完成！[/green]")
+            self._show_cost_warning(total_cost)
+            return True
+
+        except Exception as e:
+            self.console.print(f"[red]expand 失败：{e}[/red]")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _build_expand_phase1_prompt(self, outline: str, mechanism: str, characters: str) -> str:
+        """构建 expand Phase 1 prompt：扩写事件线和信息矩阵"""
+        return f"""将以下原型剧本扩写为完整版本。
+
+原型大纲：
+{outline}
+
+原型机制：
+{mechanism}
+
+原型角色：
+{characters}
+
+Phase 1 任务：
+1. 将事件从3条扩写到5-7条，保持原型事件顺序
+2. 设计4个新角色的基本设定（背景、阵营、关键秘密）
+3. 更新信息矩阵（6人 x 5-7事件）
+4. 确定结局和核心冲突
+
+请输出：
+- 扩写后的事件列表（按时间顺序）
+- 4个新角色的基本设定
+- 更新的信息矩阵（Markdown 表格）
+- 结局概述
+
+格式：Markdown，清晰分区"""
+
+    def _build_new_chars_prompt(self, phase1_content: str) -> str:
+        """构建解析新角色的 prompt"""
+        return f"""从以下扩写内容中，列出需要生成剧本的4个新角色名字。
+
+内容：
+{phase1_content}
+
+请只输出4个角色名字，每行一个，格式：角色1: 名字
+不要输出其他内容。"""
+
+    def _parse_new_character_names(self, content: str, existing_count: int = 2) -> list[str]:
+        """从 Phase 1 结果中解析出新角色名字列表"""
+        lines = content.strip().split('\n')
+        names = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # 跳过 markdown 标题
+            if line.startswith('#'):
+                continue
+            # 尝试提取 "角色X: 名字" 或 "名字" 格式
+            if ':' in line:
+                name = line.split(':', 1)[1].strip()
+            else:
+                name = line.strip('-*# ').strip()
+            if name and len(name) < 20:
+                names.append(name)
+            if len(names) >= 4:
+                break
+        return names[:4]
+
+    def _build_single_char_prompt(self, outline: str, mechanism: str, phase1_content: str, char_name: str) -> str:
+        """为单个角色生成剧本的 prompt"""
+        return f"""基于以下信息，为角色「{char_name}」生成完整的角色剧本。
+
+原大纲：
+{outline}
+
+机制设计：
+{mechanism}
+
+扩写内容（Phase 1 结果）：
+{phase1_content}
+
+请为「{char_name}」生成：
+1. 角色背景故事（200字）
+2. 角色在各个事件中的经历（按时间顺序，对应扩写后的5-7个事件）
+3. 角色视角的"真相"（该角色认为发生了什么）
+4. 角色隐藏的秘密
+5. 角色需要隐瞒的信息
+
+格式：Markdown，以 ## {char_name} 开头"""
+
+    def _assemble_expanded_script(self, phase1_content: str, char_contents: list[str], char_names: list[str]) -> str:
+        """组装最终的扩写剧本"""
+        parts = [phase1_content]
+        for content in char_contents:
+            parts.append(content)
+        return "\n\n".join(parts)
+
+    def _extract_matrix_from_phase1(self, phase1_content: str) -> str | None:
+        """从 Phase 1 结果中提取信息矩阵部分"""
+        lines = phase1_content.split('\n')
+        in_matrix = False
+        matrix_lines = []
+        for line in lines:
+            if '信息矩阵' in line or 'information matrix' in line.lower():
+                in_matrix = True
+            if in_matrix:
+                matrix_lines.append(line)
+                # 检测矩阵结束（下一个大标题或非表格行）
+                if line.startswith('#') and '信息矩阵' not in line:
+                    break
+        if matrix_lines:
+            return '\n'.join(matrix_lines[:-1]) if matrix_lines[-1].startswith('#') else '\n'.join(matrix_lines)
+        return None
+
+    def _expand_single_pass(self, outline: str, mechanism: str, characters: str, phase1_content: str) -> bool:
+        """降级路径：无法并发时使用单次 LLM 调用完成 expand"""
+        self.console.print("[yellow]使用单次扩写模式[/yellow]")
+        try:
+            single_prompt = f"""将以下原型剧本扩写为完整6人版本。
+
+原型大纲：
+{outline}
+
+原型机制：
+{mechanism}
+
+原型角色：
+{characters}
+
+Phase 1 扩写内容：
+{phase1_content}
+
+请生成完整的角色剧本（6人全部），格式：Markdown。
+
+扩写要求：
+1. 角色从2人扩写到6人
+2. 事件从3条扩写到5-7条
+3. 保持原有角色设定不变
+4. 新角色要与原有角色逻辑自洽
+"""
+            response = self._call_llm(
+                single_prompt,
+                system="你是一个专业的剧本杀作家，擅长将简化原型扩写为完整剧本。",
+                operation="expand_single"
+            )
+
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            if (self.session.project_path / "characters.md").exists():
+                (self.session.project_path / "characters.md").rename(
+                    self.session.project_path / f"characters.md.proto.{timestamp}"
+                )
+            if (self.session.project_path / "information_matrix.md").exists():
+                (self.session.project_path / "information_matrix.md").rename(
+                    self.session.project_path / f"information_matrix.md.proto.{timestamp}"
+                )
+
             chars_file = self.session.project_path / "characters.md"
             chars_file.write_text(response.content, encoding="utf-8")
 
@@ -452,13 +666,13 @@ class PhaseRunner:
             self.state.is_prototype = False
             self.session.save(self.state)
 
-            self.console.print(f"[green]expand 完成！[/green]")
+            self.console.print(f"[green]expand 完成（单次模式）[/green]")
             self._show_cost_warning(response.cost)
             return True
-
         except Exception as e:
-            self.console.print(f"[red]expand 失败：{e}[/red]")
+            self.console.print(f"[red]单次扩写也失败了：{e}[/red]")
             return False
+
 
     def run_audit(self) -> bool:
         """完整穿帮审计：基于信息矩阵深度分析所有穿帮问题

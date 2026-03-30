@@ -73,7 +73,8 @@ expand：将原型扩写为完整版本（2人→6人，3事件→5-7事件）
 │   │   └── wizard_tui.py  # init 向导 TUI
 │   ├── llm/              # LLM 适配层
 │   │   ├── client.py     # Claude + OpenAI 适配器
-│   │   └── cache.py     # LLM 响应缓存（SHA256 hash）
+│   │   ├── cache.py     # LLM 响应缓存（SHA256 hash）
+│   │   └── rate_limit.py # 并发控制器（信号量限流）
 │   ├── print/            # PDF 生成
 │   │   └── pdf_gen.py   # reportlab PDF 输出
 │   ├── assets/           # 第三方 API 适配器（存根）
@@ -81,7 +82,7 @@ expand：将原型扩写为完整版本（2人→6人，3事件→5-7事件）
 │   └── wizard/           # 核心逻辑
 │       ├── session.py    # 会话持久化（JSON）
 │       └── state_machine.py # 状态机（8阶段枚举）
-├── tests/                 # pytest 测试（33个，全部通过）
+├── tests/                 # pytest 测试（40个，全部通过）
 ├── docs/                 # 工作流文档（8阶段详解）
 ├── templates/            # 可复用模板
 ├── prompts/             # Prompt 库
@@ -124,5 +125,5 @@ IDLE → TYPE_SELECT → STORY_BRIEF → CHARACTER_DESIGN → PLOT_BUILD → ASS
 
 ```bash
 pytest tests/ -v
-# 33 tests: state_machine, session, llm_client, llm_cache
+# 40 tests: state_machine, session, llm_client, llm_cache, rate_limit
 ```

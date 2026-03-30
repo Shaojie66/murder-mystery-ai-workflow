@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.4.0] - 2026-03-30
+
+### Added
+
+#### expand 并发控制
+- `RateLimiter`（`murder_wizard/llm/rate_limit.py`）：信号量控制并发数，限制同时进行的 API 调用
+- expand 改为两阶段：Phase1 扩写事件线和信息矩阵 + Phase2 并行生成4个新角色剧本
+- 默认 max_concurrent=2，delay_between_calls=1.0s（尊重 API 限制）
+- 降级路径：无法解析新角色时自动回退到单次扩写
+
+#### RateLimiter 测试
+- `tests/test_rate_limit.py`：7个测试（并发数/延迟/错误隔离/顺序保证）
+
+---
+
 ## [0.3.0] - 2026-03-30
 
 ### Added

@@ -9,7 +9,7 @@ console = Console()
 
 
 @click.group()
-@click.version_option(version="0.3.0")
+@click.version_option(version="0.4.0")
 def main():
     """murder-wizard: 剧本杀创作向导"""
     pass

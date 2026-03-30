@@ -25,9 +25,11 @@
   缓存在项目目录 `cache.json`，`murder-wizard cache <name>` 查看统计，`--clear` 清空。
   **Effort**: S
 
-- [ ] **TODO 4: 并发控制**
-  expand 时控制多角色并行生成的速度，避免触发 API 速率限制。
-  **Effort**: S | **Depends**: expand 实现
+- [x] **TODO 4: 并发控制** (已实现)
+  `RateLimiter` 类基于信号量控制并发数（默认 max_concurrent=2）。
+  expand 从单次 LLM 调用改为两阶段：Phase1 扩写事件线 + Phase2 并行生成4个新角色剧本。
+  `murder_wizard/llm/rate_limit.py`，7个测试。
+  **Effort**: S
 
 - [ ] **TODO 5: 本地 Ollama 支持**
   支持用户配置本地 LLM（Ollama），保护隐私，不依赖云端 API。
