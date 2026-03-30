@@ -46,11 +46,17 @@ def status(project_name: str):
 @main.command()
 @click.argument("project_name")
 @click.argument("stage", type=int, nargs=1)
-def phase(project_name: str, stage: int):
-    """运行指定阶段 (1-8)"""
+@click.option("--analyze", is_flag=True, help="分析反馈并生成迭代建议（阶段4）")
+def phase(project_name: str, stage: int, analyze: bool):
+    """运行指定阶段 (1-8)
+
+    示例：
+      murder-wizard phase myproject 4       # 生成测试指南
+      murder-wizard phase myproject 4 --analyze  # 分析反馈
+    """
     from murder_wizard.cli.commands import run_phase
     session = SessionManager(project_name)
-    run_phase(session, stage, console)
+    run_phase(session, stage, console, analyze=analyze)
 
 
 @main.command()

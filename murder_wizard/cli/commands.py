@@ -27,11 +27,11 @@ def show_status(session: SessionManager, console: Console):
         (Stage.STAGE_1_MECHANISM, "阶段1：机制设计", ["mechanism.md"]),
         (Stage.STAGE_2_SCRIPT, "阶段2：剧本创作", ["characters.md", "information_matrix.md"]),
         (Stage.STAGE_3_VISUAL, "阶段3：视觉物料", ["image-prompts.md"]),
-        (Stage.STAGE_4_TEST, "阶段4：用户测试", []),
-        (Stage.STAGE_5_COMMERCIAL, "阶段5：商业化", []),
-        (Stage.STAGE_6_PRINT, "阶段6：印刷生产", []),
-        (Stage.STAGE_7_PROMO, "阶段7：宣发内容", []),
-        (Stage.STAGE_8_COMMUNITY, "阶段8：社区运营", []),
+        (Stage.STAGE_4_TEST, "阶段4：用户测试", ["test_guide.md"]),
+        (Stage.STAGE_5_COMMERCIAL, "阶段5：商业化", ["commercial.md"]),
+        (Stage.STAGE_6_PRINT, "阶段6：印刷生产", ["script.pdf"]),
+        (Stage.STAGE_7_PROMO, "阶段7：宣发内容", ["promo_content.md"]),
+        (Stage.STAGE_8_COMMUNITY, "阶段8：社区运营", ["community_plan.md"]),
     ]
 
     current = state.current_stage
@@ -64,8 +64,15 @@ def show_status(session: SessionManager, console: Console):
         console.print(f"\n[dim]API 总消耗：约 ¥{total_cost:.2f}[/dim]")
 
 
-def run_phase(session: SessionManager, stage: int, console: Console):
-    """运行指定阶段"""
+def run_phase(session: SessionManager, stage: int, console: Console, analyze: bool = False):
+    """运行指定阶段
+
+    Args:
+        session: 会话管理器
+        stage: 阶段编号 (1-8)
+        console: Rich 控制台
+        analyze: 是否为分析模式（阶段4）
+    """
     state = session.load()
 
     if state is None:
@@ -88,15 +95,18 @@ def run_phase(session: SessionManager, stage: int, console: Console):
         elif stage == 3:
             runner.run_stage_3()
         elif stage == 4:
-            _run_stage_4(session, state, console)
+            if analyze:
+                _run_stage_4_analyze(session, state, console, runner)
+            else:
+                runner.run_stage_4()
         elif stage == 5:
-            _run_stage_5(session, state, console)
+            runner.run_stage_5()
         elif stage == 6:
-            _run_stage_6(session, state, console)
+            runner.run_stage_6()
         elif stage == 7:
-            _run_stage_7(session, state, console)
+            runner.run_stage_7()
         elif stage == 8:
-            _run_stage_8(session, state, console)
+            runner.run_stage_8()
         else:
             console.print(f"[yellow]阶段 {stage} 尚未实现[/yellow]")
 
@@ -107,34 +117,56 @@ def run_phase(session: SessionManager, stage: int, console: Console):
         console.print(f"[red]阶段执行失败：{e}[/red]")
 
 
-def _run_stage_4(session, state, console):
-    """阶段4：用户测试"""
-    console.print("[yellow]阶段4（用户测试）尚未实现[/yellow]")
-    console.print("预计在第二批中支持")
+def _run_stage_4_analyze(session, state, console, runner: PhaseRunner):
+    """阶段4分析模式：分析用户反馈并生成迭代建议"""
+    feedback_file = session.project_path / "feedback.md"
 
+    if not feedback_file.exists():
+        console.print("[yellow]未找到 feedback.md[/yellow]")
+        console.print("请先收集玩家反馈，保存到 feedback.md 后再运行分析")
+        return
 
-def _run_stage_5(session, state, console):
-    """阶段5：商业化"""
-    console.print("[yellow]阶段5（商业化）尚未实现[/yellow]")
-    console.print("预计在第二批中支持")
+    feedback = feedback_file.read_text(encoding="utf-8")
+    characters = (session.project_path / "characters.md").read_text(encoding="utf-8") if (session.project_path / "characters.md").exists() else ""
+    mechanism = (session.project_path / "mechanism.md").read_text(encoding="utf-8") if (session.project_path / "mechanism.md").exists() else ""
 
+    try:
+        from rich.progress import Progress, SpinnerColumn, TextColumn
 
-def _run_stage_6(session, state, console):
-    """阶段6：印刷生产"""
-    console.print("[yellow]阶段6（印刷生产）尚未实现[/yellow]")
-    console.print("预计在第二批中支持")
+        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console) as progress:
+            task = progress.add_task("分析反馈...", total=None)
+            response = runner._call_llm(
+                f"""基于以下测试反馈，生成迭代建议：
 
+玩家反馈：
+{feedback}
 
-def _run_stage_7(session, state, console):
-    """阶段7：宣发内容"""
-    console.print("[yellow]阶段7（宣发内容）尚未实现[/yellow]")
-    console.print("预计在第三批中支持")
+原角色剧本：
+{characters}
 
+原机制设计：
+{mechanism}
 
-def _run_stage_8(session, state, console):
-    """阶段8：社区运营"""
-    console.print("[yellow]阶段8（社区运营）尚未实现[/yellow]")
-    console.print("预计在第三批中支持")
+请分析：
+1. 哪些地方存在平衡性问题
+2. 哪些角色体验不佳或过于强大
+3. 机制是否有漏洞或死路
+4. 需要修改的具体内容（角色剧本调整/机制调整）
+5. 优先级排序（高/中/低）
+
+格式：Markdown""",
+                system="你是一个专业的剧本杀平衡性分析师，擅长发现游戏问题并给出具体修改建议。",
+                operation="stage_4_analyze"
+            )
+
+        report_file = session.project_path / "iteration_report.md"
+        report_file.write_text(response.content, encoding="utf-8")
+
+        console.print(f"[green]迭代报告已保存到：{report_file}[/green]")
+        runner._show_cost_warning(response.cost)
+
+    except Exception as e:
+        console.print(f"[red]分析失败：{e}[/red]")
 
 
 def run_expand(session: SessionManager, console: Console):

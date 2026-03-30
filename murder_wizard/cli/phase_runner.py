@@ -1,4 +1,5 @@
 """Phase runner - executes each stage's LLM workflow."""
+import json
 import time
 import signal
 from pathlib import Path
@@ -399,3 +400,313 @@ class PhaseRunner:
         total = self.session.get_total_cost()
         self.console.print(f"\n[dim]本次消耗：约 ¥{cost:.4f}[/dim]")
         self.console.print(f"[dim]累计消耗：约 ¥{total:.4f}[/dim]")
+
+    def run_stage_4(self) -> bool:
+        """阶段4：用户测试
+
+        生成测试指南，提示用户收集反馈并用 --analyze 分析
+        """
+        self.console.print("[cyan]阶段4：用户测试[/cyan]")
+
+        if not (self.session.project_path / "characters.md").exists():
+            self.console.print("[red]请先完成阶段2[/red]")
+            return False
+
+        if (self.session.project_path / "test_guide.md").exists():
+            self.console.print("[green]阶段4已完成，跳过[/green]")
+            return True
+
+        characters = (self.session.project_path / "characters.md").read_text(encoding="utf-8")
+        mechanism = (self.session.project_path / "mechanism.md").read_text(encoding="utf-8") if (self.session.project_path / "mechanism.md").exists() else ""
+
+        try:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成测试指南...", total=None)
+                response = self._call_llm(
+                    self._build_test_guide_prompt(characters, mechanism),
+                    system="你是一个专业的剧本杀测试设计师，擅长设计用户体验测试流程，发现游戏平衡性问题。",
+                    operation="stage_4_test_guide"
+                )
+
+            guide_file = self.session.project_path / "test_guide.md"
+            guide_file.write_text(response.content, encoding="utf-8")
+
+            self.state.current_stage = Stage.STAGE_4_TEST
+            self.session.save(self.state)
+
+            self.console.print(f"[green]测试指南已保存到：{guide_file}[/green]")
+            self._show_cost_warning(response.cost)
+
+            self.console.print("\n[yellow]下一步操作：[/yellow]")
+            self.console.print("1. 使用测试指南组织内测")
+            self.console.print("2. 收集玩家反馈，记录到 feedback.md")
+            self.console.print("3. 再次运行：murder-wizard phase <项目名> 4 --analyze")
+            self.console.print("   （分析反馈并生成迭代建议）")
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[red]阶段4失败：{e}[/red]")
+            return False
+
+    def _build_test_guide_prompt(self, characters: str, mechanism: str) -> str:
+        """构建测试指南 prompt"""
+        return f"""基于以下角色剧本和机制设计，生成测试指南。
+
+角色剧本：
+{characters}
+
+机制设计：
+{mechanism}
+
+请生成：
+1. 测试场景设置（如何布置场景、介绍规则）
+2. DM主持要点（每个阶段的关键提示词）
+3. 平衡性检查点（哪些环节容易出现不平衡）
+4. 玩家反馈收集模板
+5. 常见问题及解决方案
+
+格式：Markdown，包含表格和清单
+"""
+
+    def run_stage_5(self) -> bool:
+        """阶段5：商业化
+
+        生成成本核算、定价策略、销售渠道
+        """
+        self.console.print("[cyan]阶段5：商业化[/cyan]")
+
+        if not (self.session.project_path / "characters.md").exists():
+            self.console.print("[red]请先完成阶段2[/red]")
+            return False
+
+        if (self.session.project_path / "commercial.md").exists():
+            self.console.print("[green]阶段5已完成，跳过[/green]")
+            return True
+
+        characters = (self.session.project_path / "characters.md").read_text(encoding="utf-8")
+        mechanism = (self.session.project_path / "mechanism.md").read_text(encoding="utf-8") if (self.session.project_path / "mechanism.md").exists() else ""
+
+        try:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成商业化方案...", total=None)
+                response = self._call_llm(
+                    self._build_commercial_prompt(characters, mechanism),
+                    system="你是一个专业的剧本杀商业化顾问，熟悉国内剧本杀市场价格、成本和渠道。",
+                    operation="stage_5_commercial"
+                )
+
+            commercial_file = self.session.project_path / "commercial.md"
+            commercial_file.write_text(response.content, encoding="utf-8")
+
+            self.state.current_stage = Stage.STAGE_5_COMMERCIAL
+            self.session.save(self.state)
+
+            self.console.print(f"[green]商业化方案已保存到：{commercial_file}[/green]")
+            self._show_cost_warning(response.cost)
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[red]阶段5失败：{e}[/red]")
+            return False
+
+    def _build_commercial_prompt(self, characters: str, mechanism: str) -> str:
+        """构建商业化 prompt"""
+        return f"""基于以下剧本信息，生成商业化方案。
+
+角色剧本：
+{characters}
+
+机制设计：
+{mechanism}
+
+请生成：
+1. 成本核算表（印刷、道具、包装、物流）
+2. 定价策略（成本加成法 vs 市场竞品对比）
+3. 销售渠道（线上：淘宝/闲鱼/小红书；线下：剧本杀店/桌游吧）
+4. 利润估算（按销量分档：100/500/1000套）
+5. 上市时机建议（节假日、剧本杀旺季）
+
+格式：Markdown，包含表格
+"""
+
+    def run_stage_6(self) -> bool:
+        """阶段6：印刷生产
+
+        生成 PDF 并检查印刷就绪状态
+        """
+        self.console.print("[cyan]阶段6：印刷生产[/cyan]")
+
+        if not (self.session.project_path / "characters.md").exists():
+            self.console.print("[red]请先完成阶段2[/red]")
+            return False
+
+        try:
+            from murder_wizard.print.pdf_gen import PDFGenerator
+        except ImportError:
+            self.console.print("[red]缺少 pdf_gen 模块[/red]")
+            return False
+
+        generator = PDFGenerator(self.session.project_path)
+
+        # 检查印刷就绪状态
+        ready, issues = generator.check_print_ready()
+
+        if not ready:
+            self.console.print("[yellow]印刷就绪检查发现问题：[/yellow]")
+            for issue in issues:
+                self.console.print(f"  - {issue}")
+
+        # 生成剧本 PDF
+        try:
+            script_pdf = generator.generate_script_pdf()
+            self.console.print(f"[green]剧本 PDF 已生成：{script_pdf}[/green]")
+        except Exception as e:
+            self.console.print(f"[yellow]剧本 PDF 生成失败：{e}[/yellow]")
+
+        # 生成线索卡 PDF
+        try:
+            clue_pdf = generator.generate_clue_cards()
+            self.console.print(f"[green]线索卡 PDF 已生成：{clue_pdf}[/green]")
+        except Exception as e:
+            self.console.print(f"[yellow]线索卡 PDF 生成失败：{e}[/yellow]")
+
+        # 生成印刷订单信息
+        order_info = generator.generate_proof_order()
+        order_file = self.session.project_path / "print_order.json"
+        order_file.write_text(json.dumps(order_info, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.console.print(f"[green]印刷订单信息已保存到：{order_file}[/green]")
+
+        self.state.current_stage = Stage.STAGE_6_PRINT
+        self.session.save(self.state)
+
+        self.console.print("\n[bold green]印刷文件生成完成！[/bold green]")
+        self.console.print("下一步：")
+        self.console.print("1. 审核 PDF 文件")
+        self.console.print("2. 联系印刷厂打样")
+        self.console.print("3. 确认后下单量产")
+
+        return True
+
+    def run_stage_7(self) -> bool:
+        """阶段7：宣发内容
+
+        生成 B站/小红书/公众号推广文案
+        """
+        self.console.print("[cyan]阶段7：宣发内容[/cyan]")
+
+        if not (self.session.project_path / "characters.md").exists():
+            self.console.print("[red]请先完成阶段2[/red]")
+            return False
+
+        if (self.session.project_path / "promo_content.md").exists():
+            self.console.print("[green]阶段7已完成，跳过[/green]")
+            return True
+
+        characters = (self.session.project_path / "characters.md").read_text(encoding="utf-8")
+        mechanism = (self.session.project_path / "mechanism.md").read_text(encoding="utf-8") if (self.session.project_path / "mechanism.md").exists() else ""
+
+        try:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成宣发内容...", total=None)
+                response = self._call_llm(
+                    self._build_promo_prompt(characters, mechanism),
+                    system="你是一个专业的剧本杀宣发文案专家，熟悉B站、小红书、公众号的文案风格。",
+                    operation="stage_7_promo"
+                )
+
+            promo_file = self.session.project_path / "promo_content.md"
+            promo_file.write_text(response.content, encoding="utf-8")
+
+            self.state.current_stage = Stage.STAGE_7_PROMO
+            self.session.save(self.state)
+
+            self.console.print(f"[green]宣发内容已保存到：{promo_file}[/green]")
+            self._show_cost_warning(response.cost)
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[red]阶段7失败：{e}[/red]")
+            return False
+
+    def _build_promo_prompt(self, characters: str, mechanism: str) -> str:
+        """构建宣发内容 prompt"""
+        return f"""基于以下剧本信息，生成宣发内容。
+
+角色剧本：
+{characters}
+
+机制设计：
+{mechanism}
+
+请为以下平台生成文案：
+1. B站/小红书预告文案（吸引眼球，适合传播）
+2. 公众号推文（详细介绍剧情和机制，适合深度用户）
+3. 淘宝/闲鱼商品描述（突出卖点，促进转化）
+4. 社群里推荐语（简短有力，引发讨论）
+
+格式：Markdown，区分不同平台"""
+
+    def run_stage_8(self) -> bool:
+        """阶段8：社区运营
+
+        生成玩家社群运营方案和扩展包计划
+        """
+        self.console.print("[cyan]阶段8：社区运营[/cyan]")
+
+        if not (self.session.project_path / "characters.md").exists():
+            self.console.print("[red]请先完成阶段2[/red]")
+            return False
+
+        if (self.session.project_path / "community_plan.md").exists():
+            self.console.print("[green]阶段8已完成，跳过[/green]")
+            return True
+
+        characters = (self.session.project_path / "characters.md").read_text(encoding="utf-8")
+        mechanism = (self.session.project_path / "mechanism.md").read_text(encoding="utf-8") if (self.session.project_path / "mechanism.md").exists() else ""
+
+        try:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成社区运营方案...", total=None)
+                response = self._call_llm(
+                    self._build_community_prompt(characters, mechanism),
+                    system="你是一个专业的剧本杀社群运营专家，熟悉玩家社群建设和扩展包开发。",
+                    operation="stage_8_community"
+                )
+
+            plan_file = self.session.project_path / "community_plan.md"
+            plan_file.write_text(response.content, encoding="utf-8")
+
+            self.state.current_stage = Stage.STAGE_8_COMMUNITY
+            self.session.save(self.state)
+
+            self.console.print(f"[green]社区运营方案已保存到：{plan_file}[/green]")
+            self._show_cost_warning(response.cost)
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[red]阶段8失败：{e}[/red]")
+            return False
+
+    def _build_community_prompt(self, characters: str, mechanism: str) -> str:
+        """构建社区运营 prompt"""
+        return f"""基于以下剧本信息，生成社区运营方案。
+
+角色剧本：
+{characters}
+
+机制设计：
+{mechanism}
+
+请生成：
+1. 玩家社群建设方案（QQ/微信群、Discord、豆瓣小组）
+2. 核心玩家培养计划（KOC策略）
+3. 扩展包（续作/DLC）开发计划
+4. 玩家反馈闭环机制
+5. 盗版防护策略
+
+格式：Markdown，包含时间线和里程碑"""
+

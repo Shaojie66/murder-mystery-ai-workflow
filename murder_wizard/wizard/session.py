@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 
-from murder_wizard.wizard.state_machine import MurderWizardState
+from murder_wizard.wizard.state_machine import MurderWizardState, Stage
 
 
 class SessionManager:
@@ -91,12 +91,12 @@ class SessionManager:
 
         if outline_file.exists():
             state.outline = outline_file.read_text(encoding="utf-8")
-            state.current_stage = state.Stage.STORY_BRIEF
+            state.current_stage = Stage.STORY_BRIEF
 
         if characters_file.exists():
-            state.current_stage = state.Stage.CHARACTER_DESIGN
+            state.current_stage = Stage.CHARACTER_DESIGN
 
         if plot_file.exists():
-            state.current_stage = state.Stage.PLOT_BUILD
+            state.current_stage = Stage.PLOT_BUILD
 
         return state
