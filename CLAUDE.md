@@ -76,6 +76,8 @@ expand：将原型扩写为完整版本（2人→6人，3事件→5-7事件）
 │   │   └── cache.py     # LLM 响应缓存（SHA256 hash）
 │   ├── print/            # PDF 生成
 │   │   └── pdf_gen.py   # reportlab PDF 输出
+│   ├── assets/           # 第三方 API 适配器（存根）
+│   │   └── jimeng.py    # 即梦 AI + 海螺 AI（待集成）
 │   └── wizard/           # 核心逻辑
 │       ├── session.py    # 会话持久化（JSON）
 │       └── state_machine.py # 状态机（8阶段枚举）
