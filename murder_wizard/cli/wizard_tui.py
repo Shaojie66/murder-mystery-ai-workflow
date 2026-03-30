@@ -33,9 +33,22 @@ def run_init_wizard(session: SessionManager, state: MurderWizardState, console: 
         border_style="cyan"
     ))
 
+    # 原型模式
+    if not state.is_prototype:
+        console.print("\n[bold]第一步：选择创作模式[/bold]")
+        console.print("1. [green]原型模式（推荐）[/green] - 先做一个2人小本，快速验证")
+        console.print("2. [cyan]完整模式[/cyan] - 6人完整剧本，周期更长")
+
+        mode_choice = Prompt.ask(
+            "\n请选择创作模式",
+            choices=["1", "2"],
+            default="1"
+        )
+        state.is_prototype = (mode_choice == "1")
+
     # 选择剧本类型
     if not state.story_type:
-        console.print("\n[bold]第一步：选择剧本类型[/bold]")
+        console.print("\n[bold]第二步：选择剧本类型[/bold]")
         console.print("1. [red]情感本[/red] - 注重角色情感和故事体验")
         console.print("2. [yellow]机制本[/yellow] - 注重游戏机制和阵营对抗")
         console.print("3. [blue]推理本[/blue] - 注重解谜和线索推理")
@@ -50,6 +63,8 @@ def run_init_wizard(session: SessionManager, state: MurderWizardState, console: 
 
     # 收集基本信息
     console.print(f"\n[bold]当前类型：{state.story_type}[/bold]")
+    if state.is_prototype:
+        console.print("[yellow]原型模式：2人版本，快速验证[/yellow]")
 
     # 时代背景
     era = Prompt.ask("\n时代背景（默认：现代）", default="现代")

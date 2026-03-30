@@ -17,12 +17,20 @@ def main():
 
 @main.command()
 @click.argument("project_name")
-@click.option("--type", "story_type", type=click.Choice(["emotion", "mechanic", "puzzle"]), default="mechanic", help="剧本类型")
-def init(project_name: str, story_type: str):
-    """初始化新剧本杀项目"""
+@click.option("--type", "story_type", type=click.Choice(["emotion", "mechanic", "puzzle"]), default=None, help="剧本类型")
+@click.option("--prototype/--full", "is_prototype", default=True, help="原型模式（默认开启，2人小本快速验证）")
+def init(project_name: str, story_type: str, is_prototype: bool):
+    """初始化新剧本杀项目
+
+    原型模式（默认）：先生成2人版本，快速验证后 expand 扩写为完整6人版本
+    """
     from murder_wizard.cli.wizard_tui import run_init_wizard
     session = SessionManager(project_name)
-    state = MurderWizardState(story_type=story_type, project_name=project_name)
+    state = MurderWizardState(
+        story_type=story_type or "mechanic",
+        project_name=project_name,
+        is_prototype=is_prototype
+    )
     run_init_wizard(session, state, console)
 
 
