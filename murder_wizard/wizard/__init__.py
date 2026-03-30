@@ -1,0 +1,1 @@
+"""murder-wizard wizard module."""
