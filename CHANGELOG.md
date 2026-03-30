@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.5.0] - 2026-03-30
+
+### Added
+
+#### 本地 Ollama 支持
+- `OllamaAdapter`（`murder_wizard/llm/client.py`）：Ollama 本地 LLM 适配器
+- OpenAI 兼容 API 端点（http://localhost:11434/v1），无需额外部署
+- 零 API 成本，保护隐私，适合开发和测试
+- 通过环境变量配置：`LLM_PROVIDER=ollama`、`OLLAMA_BASE_URL`、`OLLAMA_MODEL`
+
+---
+
 ## [0.4.0] - 2026-03-30
 
 ### Added

@@ -1,5 +1,6 @@
 """Phase runner - executes each stage's LLM workflow."""
 import json
+import os
 import time
 import signal
 from pathlib import Path
@@ -26,9 +27,15 @@ class PhaseRunner:
         self._setup_llm()
 
     def _setup_llm(self):
-        """初始化 LLM 适配器"""
+        """初始化 LLM 适配器
+
+        支持通过环境变量配置：
+        - LLM_PROVIDER: claude / openai / ollama（默认 claude）
+        - OLLAMA_BASE_URL: Ollama 服务地址（默认 http://localhost:11434/v1）
+        - OLLAMA_MODEL: Ollama 模型名（默认 llama3）
+        """
         try:
-            provider = "claude"  # 默认 Claude
+            provider = os.environ.get("LLM_PROVIDER", "claude")
             self.llm = create_llm_adapter(provider)
         except Exception as e:
             self.console.print(f"[red]LLM 初始化失败：{e}[/red]")

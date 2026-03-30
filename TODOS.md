@@ -31,9 +31,11 @@
   `murder_wizard/llm/rate_limit.py`，7个测试。
   **Effort**: S
 
-- [ ] **TODO 5: 本地 Ollama 支持**
-  支持用户配置本地 LLM（Ollama），保护隐私，不依赖云端 API。
-  **Effort**: M | **Depends**: 第一批发布后
+- [x] **TODO 5: 本地 Ollama 支持** (已实现)
+  `OllamaAdapter`（`murder_wizard/llm/client.py`）：Ollama 本地 LLM 适配器。
+  OpenAI 兼容 API 端点（http://localhost:11434/v1），零 API 成本。
+  通过环境变量配置：`LLM_PROVIDER=ollama`、`OLLAMA_BASE_URL`、`OLLAMA_MODEL`。
+  **Effort**: M
 
 ---
 

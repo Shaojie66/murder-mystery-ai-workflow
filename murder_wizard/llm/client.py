@@ -169,11 +169,113 @@ class OpenAIAdapter(LLMAdapter):
         return 0.00001  # GPT-4o 平均成本
 
 
+class OllamaAdapter(LLMAdapter):
+    """Ollama 本地 LLM 适配器（OpenAI 兼容 API）。
+
+    使用 Ollama 的 OpenAI 兼容端点 http://localhost:11434/v1/chat/completions。
+    支持用户配置自定义 base_url 和 model，不依赖云端 API。
+    """
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434/v1",
+        model: str = "llama3",
+        api_key: Optional[str] = None,
+    ):
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("openai package not installed. Run: pip install openai")
+
+        self.base_url = base_url
+        self.model = model
+        self.client = OpenAI(
+            api_key=api_key or os.environ.get("OLLAMA_API_KEY") or "ollama",
+            base_url=base_url,
+        )
+
+    def complete(self, prompt: str, system: str = "") -> LLMResponse:
+        """调用 Ollama（OpenAI 兼容端点）"""
+        from openai import APIError, RateLimitError
+        max_retries = 3
+        base_delay = 2
+
+        for attempt in range(max_retries):
+            try:
+                messages = []
+                if system:
+                    messages.append({"role": "system", "content": system})
+                messages.append({"role": "user", "content": prompt})
+
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=4096,
+                )
+                content = response.choices[0].message.content
+                # Ollama 不返回 usage.token_count 时估计
+                tokens = getattr(response.usage, "total_tokens", None) or self._estimate_tokens(prompt + content)
+                # Ollama 本地运行，成本为零
+                cost = 0.0
+
+                return LLMResponse(
+                    content=content,
+                    tokens_used=tokens,
+                    cost=cost,
+                    model=self.model
+                )
+            except (APIError, RateLimitError):
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                else:
+                    raise
+            except Exception as e:
+                raise
+
+        raise RuntimeError(f"Ollama 调用失败（已重试 {max_retries} 次）：{e}")
+
+    def complete_streaming(self, prompt: str, system: str = "") -> Iterator[str]:
+        """Ollama 流式输出"""
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=4096,
+            stream=True
+        )
+        for event in response:
+            if event.choices and event.choices[0].delta.content:
+                yield event.choices[0].delta.content
+
+    def cost_per_token(self) -> float:
+        """本地 Ollama 无 API 成本"""
+        return 0.0
+
+    def _estimate_tokens(self, text: str) -> int:
+        """粗略估计 token 数（中文约 2 字符/token，英文约 4 字符/token）"""
+        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        other_chars = len(text) - chinese_chars
+        return int(chinese_chars / 2 + other_chars / 4)
+
+
 def create_llm_adapter(provider: str = "claude") -> LLMAdapter:
-    """工厂函数：创建 LLM 适配器"""
+    """工厂函数：创建 LLM 适配器
+
+    Args:
+        provider: "claude" / "openai" / "ollama"
+    """
     if provider == "claude":
         return ClaudeAdapter()
     elif provider == "openai" or provider == "gpt":
         return OpenAIAdapter()
+    elif provider == "ollama":
+        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        model = os.environ.get("OLLAMA_MODEL", "llama3")
+        return OllamaAdapter(base_url=base_url, model=model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")

@@ -82,7 +82,7 @@ expand：将原型扩写为完整版本（2人→6人，3事件→5-7事件）
 │   └── wizard/           # 核心逻辑
 │       ├── session.py    # 会话持久化（JSON）
 │       └── state_machine.py # 状态机（8阶段枚举）
-├── tests/                 # pytest 测试（40个，全部通过）
+├── tests/                 # pytest 测试（45个，全部通过）
 ├── docs/                 # 工作流文档（8阶段详解）
 ├── templates/            # 可复用模板
 ├── prompts/             # Prompt 库
@@ -105,7 +105,17 @@ IDLE → TYPE_SELECT → STORY_BRIEF → CHARACTER_DESIGN → PLOT_BUILD → ASS
                                     ──► STAGE_6_PRINT ──► STAGE_7_PROMO ──► STAGE_8_COMMUNITY
 ```
 
-## 关键约束
+## LLM 配置
+
+通过环境变量选择 LLM provider：
+
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| `LLM_PROVIDER` | `claude` | `claude` / `openai` / `ollama` |
+| `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Ollama 服务地址 |
+| `OLLAMA_MODEL` | `llama3` | Ollama 模型名 |
+
+Ollama 优势：本地运行，零 API 成本，保护隐私。推荐用于开发和测试。
 
 - 剧本杀固定为 6 人（原型模式 2 人）
 - 每人有 a 本（阅读本）+ b 本（线索本）
@@ -125,5 +135,5 @@ IDLE → TYPE_SELECT → STORY_BRIEF → CHARACTER_DESIGN → PLOT_BUILD → ASS
 
 ```bash
 pytest tests/ -v
-# 40 tests: state_machine, session, llm_client, llm_cache, rate_limit
+# 45 tests: state_machine, session, llm_client, llm_cache, rate_limit, ollama_adapter
 ```
