@@ -89,42 +89,46 @@ def run_phase(session: SessionManager, stage: int, console: Console, analyze: bo
         runner = PhaseRunner(session, state, console)
 
         if stage == 1:
-            runner.run_stage_1()
+            ok = runner.run_stage_1()
         elif stage == 2:
-            runner.run_stage_2()
+            ok = runner.run_stage_2()
         elif stage == 3:
-            runner.run_stage_3()
+            ok = runner.run_stage_3()
         elif stage == 4:
             if analyze:
-                _run_stage_4_analyze(session, state, console, runner)
+                ok = _run_stage_4_analyze(session, state, console, runner)
             else:
-                runner.run_stage_4()
+                ok = runner.run_stage_4()
         elif stage == 5:
-            runner.run_stage_5()
+            ok = runner.run_stage_5()
         elif stage == 6:
-            runner.run_stage_6()
+            ok = runner.run_stage_6()
         elif stage == 7:
-            runner.run_stage_7()
+            ok = runner.run_stage_7()
         elif stage == 8:
-            runner.run_stage_8()
+            ok = runner.run_stage_8()
         else:
             console.print(f"[yellow]阶段 {stage} 尚未实现[/yellow]")
+            ok = False
 
-        console.print("\n[bold green]阶段完成！[/bold green]")
-        console.print(f"运行 [cyan]murder-wizard status {state.project_name}[/cyan] 查看状态")
+        if ok:
+            console.print("\n[bold green]阶段完成！[/bold green]")
+            console.print(f"运行 [cyan]murder-wizard status {state.project_name}[/cyan] 查看状态")
+        else:
+            console.print("\n[bold red]阶段失败，请检查上方错误信息[/bold red]")
 
     except Exception as e:
         console.print(f"[red]阶段执行失败：{e}[/red]")
 
 
-def _run_stage_4_analyze(session, state, console, runner: PhaseRunner):
+def _run_stage_4_analyze(session, state, console, runner: PhaseRunner) -> bool:
     """阶段4分析模式：分析用户反馈并生成迭代建议"""
     feedback_file = session.project_path / "feedback.md"
 
     if not feedback_file.exists():
         console.print("[yellow]未找到 feedback.md[/yellow]")
         console.print("请先收集玩家反馈，保存到 feedback.md 后再运行分析")
-        return
+        return False
 
     feedback = feedback_file.read_text(encoding="utf-8")
     characters = (session.project_path / "characters.md").read_text(encoding="utf-8") if (session.project_path / "characters.md").exists() else ""
@@ -164,9 +168,11 @@ def _run_stage_4_analyze(session, state, console, runner: PhaseRunner):
 
         console.print(f"[green]迭代报告已保存到：{report_file}[/green]")
         runner._show_cost_warning(response.cost)
+        return True
 
     except Exception as e:
         console.print(f"[red]分析失败：{e}[/red]")
+        return False
 
 
 def run_expand(session: SessionManager, console: Console):
@@ -185,8 +191,11 @@ def run_expand(session: SessionManager, console: Console):
 
     try:
         runner = PhaseRunner(session, state, console)
-        runner.run_expand()
-        console.print("\n[bold green]Expand 完成！[/bold green]")
+        ok = runner.run_expand()
+        if ok:
+            console.print("\n[bold green]Expand 完成！[/bold green]")
+        else:
+            console.print("\n[bold red]Expand 失败，请检查上方错误信息[/bold red]")
 
     except Exception as e:
         console.print(f"[red]Expand 失败：{e}[/red]")
@@ -231,8 +240,11 @@ def run_audit(session: SessionManager, console: Console):
 
     try:
         runner = PhaseRunner(session, state, console)
-        runner.run_audit()
-        console.print("\n[bold green]审计完成！[/bold green]")
+        ok = runner.run_audit()
+        if ok:
+            console.print("\n[bold green]审计完成！[/bold green]")
+        else:
+            console.print("\n[bold red]审计失败，请检查上方错误信息[/bold red]")
 
     except Exception as e:
         console.print(f"[red]审计失败：{e}[/red]")
