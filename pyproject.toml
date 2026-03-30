@@ -49,5 +49,8 @@ Changelog = "https://github.com/Shaojie66/murder-mystery-ai-workflow/blob/main/C
 where = ["."]
 include = ["murder_wizard*"]
 
+[tool.setuptools.package-data]
+murder_wizard = ["prompts/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

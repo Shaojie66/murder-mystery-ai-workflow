@@ -13,6 +13,7 @@ from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
 from murder_wizard.llm.client import create_llm_adapter, LLMResponse
 from murder_wizard.llm.cache import LLMCache
+from murder_wizard.prompts.loader import PromptLoader
 
 
 class PhaseRunner:
@@ -24,6 +25,7 @@ class PhaseRunner:
         self.console = console
         self.llm = None
         self._cache = LLMCache(session.project_path)
+        self._loader = PromptLoader()
         self._setup_llm()
 
     def _setup_llm(self):
@@ -122,26 +124,17 @@ class PhaseRunner:
         """构建机制设计 prompt"""
         is_prototype = self.state.is_prototype
         event_count = 3 if is_prototype else 7
+        char_count = 2 if is_prototype else 6
 
-        return f"""基于以下大纲，设计剧本杀的机制：
-
-{self.state.outline}
-
-类型：{self.state.story_type}
-
-请设计：
-1. 游戏阶段划分（如：夜晚/白天/特殊阶段）
-2. 阵营设置（如果有阵营对抗）
-3. 投票和淘汰机制
-4. 搜证机制（如何获得线索）
-5. 关键事件列表（{event_count}个核心事件，按时间顺序）
-6. 胜负判定条件
-7. 可选的特色机制（技能、道具等）
-
-原型模式：精简设计，核心机制优先。
-
-格式：Markdown，包含表格（如事件表、角色技能表）
-"""
+        return self._loader.mechanism_design(
+            brief_content=self.state.outline or "",
+            story_type=self.state.story_type or "机制本",
+            is_prototype=is_prototype,
+            q1_result="",  # Q1 由用户自行评估后填入
+            mechanism_content="",  # Q3 由 Q2 结果填入
+            event_count=event_count,
+            char_count=char_count,
+        )
 
     def run_stage_2(self) -> bool:
         """阶段2：剧本创作
@@ -206,37 +199,14 @@ class PhaseRunner:
 
     def _build_matrix_prompt(self, outline: str, mechanism: str) -> str:
         """构建信息矩阵 prompt"""
-        is_prototype = self.state.is_prototype
-        char_count = 2 if is_prototype else 6
-
-        return f"""基于以下大纲和机制设计，为{char_count}位角色创建信息矩阵。
-
-大纲：
-{outline}
-
-机制设计：
-{mechanism}
-
-类型：{self.state.story_type}
-
-请创建信息矩阵表，格式：
-
-| 事件/信息 | 角色1 | 角色2 | ... | 角色N |
-|-----------|-------|-------|-----|--------|
-
-行：每个关键事件（{5 if is_prototype else 15}个左右）
-列：每位角色
-单元格：该角色在该事件中知道什么、做了什么、看到了什么
-
-规则：
-1. 每个人只知道自己视角的信息
-2. 不能有穿帮（角色不能知道当时不知道的信息）
-3. 六人拼图 = 完整真相
-4. 用"?"表示该角色不知道该信息
-5. 用"[盲区]"表示该事件的故意留白
-
-原型模式：2人表格，3条事件线。
-"""
+        return self._loader.information_matrix(
+            brief_content=outline,
+            mechanism_content=mechanism,
+            story_type=self.state.story_type or "机制本",
+            is_prototype=self.state.is_prototype,
+            fill_rules=None,  # uses default from loader
+            matrix_table=None,  # uses default blank table
+        )
 
     def _run_consistency_check(self, characters: str, matrix: str) -> None:
         """轻量穿帮检查：检测角色剧本与信息矩阵的明显矛盾"""
@@ -267,47 +237,21 @@ class PhaseRunner:
 
     def _build_consistency_check_prompt(self, characters: str, matrix: str) -> str:
         """构建穿帮检查 prompt"""
-        return f"""请检查以下角色剧本与信息矩阵是否存在明显穿帮。
-
-重点检查：
-1. 角色是否提及了当时还不知道的信息
-2. 时间线是否矛盾（如：角色在某事件前就已知某事）
-3. 秘密/隐瞒信息是否被其他角色意外暴露
-4. 阵营设定是否自相矛盾
-
-角色剧本：
-{characters}
-
-信息矩阵：
-{matrix}
-
-请逐角色检查，输出格式：
-- 无穿帮：输出"穿帮检查通过"
-- 有穿帮：列出每个问题，格式为"角色X：在Y事件中本不应该知道Z信息"
-
-检查结论："""
+        return self._loader.consistency_round1(
+            characters_content=characters,
+            matrix_content=matrix,
+            is_prototype=self.state.is_prototype,
+        )
 
     def _build_characters_prompt(self, matrix: str) -> str:
         """构建角色剧本 prompt"""
-        is_prototype = self.state.is_prototype
-        char_count = 2 if is_prototype else 6
-
-        return f"""基于以下信息矩阵，为{char_count}位角色生成完整剧本。
-
-信息矩阵：
-{matrix}
-
-请为每位角色生成：
-1. 角色背景故事（200字）
-2. 角色在各个事件中的经历（按时间顺序）
-3. 角色视角的"真相"（该角色认为发生了什么）
-4. 角色隐藏的秘密（如果该角色有秘密的话）
-5. 角色需要隐瞒的信息（不能让别人知道的事）
-
-剧本格式：Markdown，每个角色一个章节
-
-原型模式：每位角色的剧本约1000字，简洁但完整。
-"""
+        return self._loader.character_script_a(
+            background_content=matrix,  # Q2 background content is derived from matrix
+            matrix_content=matrix,
+            mechanism_content=(self.session.project_path / "mechanism.md").read_text(encoding="utf-8")
+                if (self.session.project_path / "mechanism.md").exists() else "",
+            is_prototype=self.state.is_prototype,
+        )
 
     def run_stage_3(self) -> bool:
         """阶段3：视觉物料
@@ -368,29 +312,11 @@ class PhaseRunner:
 
     def _build_image_prompt(self, characters: str) -> str:
         """构建图像提示词 prompt"""
-        is_prototype = self.state.is_prototype
-        char_count = 2 if is_prototype else 6
-
-        return f"""基于以下角色设定，生成AI图像生成提示词。
-
-角色设定：
-{characters}
-
-类型：{self.state.story_type}
-
-请为以下内容生成提示词：
-1. {char_count}张角色立绘（每位角色一张）
-2. 1张封面图（整体氛围图）
-3. {3 if is_prototype else 10}张线索卡底图
-
-提示词要求：
-- 风格：国风、精致、电影感
-- 格式：英文为主，关键词+细节描述+风格标签
-- 每张图附带3个备选变体提示词
-
-格式：Markdown表格
-| 图像 | 提示词 | 变体1 | 变体2 | 变体3 |
-"""
+        return self._loader.visual_materials(
+            characters_content=characters,
+            story_type=self.state.story_type or "机制本",
+            is_prototype=self.state.is_prototype,
+        )
 
     def run_expand(self) -> bool:
         """expand：将原型扩写为完整版本（带并发控制）
@@ -765,91 +691,40 @@ Phase 1 扩写内容：
 
     def _build_audit_matrix_prompt(self, characters: str, matrix: str) -> str:
         """构建信息矩阵逐格审计 prompt"""
-        return f"""你是剧本杀严格审计员。请对以下角色剧本和信息矩阵进行逐格核对审计。
-
-## 任务
-对照信息矩阵，逐角色、逐事件检查角色剧本中的描述是否与矩阵一致。
-
-## 重点检查维度
-1. **知识边界**：角色是否在某个事件中提及了当时还不知道的信息？
-2. **时间线**：角色对事件的描述顺序是否符合矩阵中的时间线？
-3. **秘密泄露**：角色的秘密是否被其他角色意外知道（矩阵中不应存在的知识流动）？
-4. **视角真实性**：每个角色的"真相"是否与其矩阵中的角色设定一致？
-
-## 角色剧本
-{characters}
-
-## 信息矩阵
-{matrix}
-
-## 输出格式
-对每位角色输出：
-### 角色X：[角色名]
-- 问题列表（如无问题写"无"）
-- 每个问题格式：「在事件Y中，角色A不应该知道/说出Z，因为...」
-- 严重程度：P1（致命穿帮）/ P2（逻辑漏洞）/ P3（轻微不一致）
-
-最后给出总体评估：穿帮数量、是否建议上线。
-"""
+        return self._loader.consistency_round1(
+            characters_content=characters,
+            matrix_content=matrix,
+            is_prototype=self.state.is_prototype,
+        )
 
     def _build_audit_mechanism_prompt(self, characters: str, matrix: str, mechanism: str) -> str:
         """构建机制一致性审计 prompt"""
-        return f"""你是剧本杀平衡性分析师。请检查角色行为是否符合机制设计。
-
-## 任务
-检查角色剧本中的行为是否与机制设计一致，是否存在机制漏洞。
-
-## 机制设计
-{mechanism}
-
-## 角色剧本
-{characters}
-
-## 信息矩阵
-{matrix}
-
-## 重点检查
-1. 阵营设定是否自洽？阵营技能是否与角色背景匹配？
-2. 投票机制是否有漏洞？是否存在"必定获胜"的策略？
-3. 搜证顺序是否影响结果？是否存在死路（无论怎么选都必输）？
-4. 关键事件是否有多解？还是只有一个正确解？
-5. 是否有角色在任何情况下都无法获胜（平衡性问题）？
-
-## 输出格式
-- 机制漏洞列表（P1/P2/P3）
-- 平衡性问题
-- 修改建议
-"""
+        return self._loader.consistency_round2(
+            characters_content=characters,
+            matrix_content=matrix,
+            mechanism_content=mechanism,
+            is_prototype=self.state.is_prototype,
+        )
 
     def _build_audit_ending_prompt(self, characters: str, matrix: str) -> str:
         """构建结局合理性审计 prompt"""
-        return f"""你是剧本杀结局审计员。请检查结局设计是否合理。
-
-## 任务
-验证剧本结局是否符合逻辑、是否有唯一解、是否让所有玩家都有参与感。
-
-## 角色剧本
-{characters}
-
-## 信息矩阵
-{matrix}
-
-## 重点检查
-1. 结局是否唯一？还是存在多个可能的结局？
-2. 触发结局的条件是否在游戏中可推理（不是随机）？
-3. 是否有角色在结局中"消失"（没有戏份）？
-4. 真相是否在游戏过程中可被发现？还是只能靠DM陈述？
-5. 结局是否给玩家留下深刻印象（记忆点）？
-
-## 输出格式
-- 结局分析
-- 问题列表
-- 优化建议
-"""
+        return self._loader.consistency_round3(
+            full_script=characters,
+            matrix_content=matrix,
+            mechanism_content="",  # not needed for round 3
+        )
 
     def _compile_audit_report(self, characters: str, matrix: str, mechanism: str,
                                matrix_result: str, mechanism_result: str, ending_result: str) -> str:
         """编译完整审计报告"""
+        synthesis = self._loader.consistency_synthesis(
+            round1_result=matrix_result,
+            round2_result=mechanism_result,
+            round3_result=ending_result,
+            audit_timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+            commit_hash="auto",
+        )
+        # 保留原有的三节详细结果 + 综合评估结构
         return f"""# 剧本杀完整审计报告
 
 > 由 murder-wizard audit 自动生成
@@ -875,20 +750,7 @@ Phase 1 扩写内容：
 
 ## 四、综合评估
 
-请根据以上三部分审计结果，综合评估：
-
-1. **是否可以上线**：是/否/需要修改
-2. **必须修复的问题**：（P1级别）
-3. **建议修复的问题**：（P2级别）
-4. **可选优化**：（P3级别）
-
-## 五、修复优先级
-
-| 优先级 | 问题 | 修复方式 |
-|--------|------|---------|
-| P1 | | |
-| P2 | | |
-| P3 | | |
+{synthesis}
 
 ---
 
@@ -964,8 +826,15 @@ Phase 1 扩写内容：
             return False
 
     def _build_test_guide_prompt(self, characters: str, mechanism: str) -> str:
-        """构建测试指南 prompt"""
-        return f"""基于以下角色剧本和机制设计，生成测试指南。
+        """构建测试指南 prompt（使用 PromptLoader）"""
+        # 使用 Q2 角色背景模板的一部分作为参考
+        # 这里复用 system_prompt + 简洁结构
+        system = self._loader.system_test_designer()
+        is_proto = self.state.is_prototype
+        char_count = 2 if is_proto else 6
+        return f"""{system}
+
+请基于以下内容生成测试指南。
 
 角色剧本：
 {characters}
@@ -981,6 +850,8 @@ Phase 1 扩写内容：
 5. 常见问题及解决方案
 
 格式：Markdown，包含表格和清单
+
+原型模式：聚焦{char_count}人版的快速验证流程。
 """
 
     def run_stage_5(self) -> bool:
@@ -1027,7 +898,10 @@ Phase 1 扩写内容：
 
     def _build_commercial_prompt(self, characters: str, mechanism: str) -> str:
         """构建商业化 prompt"""
-        return f"""基于以下剧本信息，生成商业化方案。
+        system = self._loader.system_commercial_consultant()
+        return f"""{system}
+
+请基于以下剧本信息，生成商业化方案。
 
 角色剧本：
 {characters}
@@ -1147,7 +1021,10 @@ Phase 1 扩写内容：
 
     def _build_promo_prompt(self, characters: str, mechanism: str) -> str:
         """构建宣发内容 prompt"""
-        return f"""基于以下剧本信息，生成宣发内容。
+        system = self._loader.system_promo_writer()
+        return f"""{system}
+
+请基于以下剧本信息，生成宣发内容。
 
 角色剧本：
 {characters}
@@ -1207,7 +1084,10 @@ Phase 1 扩写内容：
 
     def _build_community_prompt(self, characters: str, mechanism: str) -> str:
         """构建社区运营 prompt"""
-        return f"""基于以下剧本信息，生成社区运营方案。
+        system = self._loader.system_community_operations()
+        return f"""{system}
+
+请基于以下剧本信息，生成社区运营方案。
 
 角色剧本：
 {characters}
