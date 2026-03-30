@@ -85,7 +85,8 @@ expand：将原型扩写为完整版本（2人→6人，3事件→5-7事件）
 ├── tests/                 # pytest 测试（45个，全部通过）
 ├── docs/                 # 工作流文档（8阶段详解）
 ├── templates/            # 可复用模板
-├── prompts/             # Prompt 库
+├── prompts/             # Prompt 库（见 prompts/FRAMEWORK.md）
+
 ├── CLAUDE.md            # 本文件
 ├── CHANGELOG.md         # 版本记录
 ├── CONTRIBUTING.md      # 贡献指南
