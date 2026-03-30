@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.3.0] - 2026-03-30
+
+### Added
+
+#### 完整 audit 审计命令
+- `murder-wizard audit <name>`：完整穿帮审计（独立命令，不自动触发）
+- 三轮深度 LLM 分析：信息矩阵逐格审计 + 机制一致性审计 + 结局合理性审计
+- 生成 `audit_report.md`，含 P1/P2/P3 问题分级和修复优先级表
+- 建议在上线前独立运行
+
+---
+
 ## [0.2.0] - 2026-03-30
 
 ### Added

@@ -9,7 +9,7 @@ console = Console()
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version="0.3.0")
 def main():
     """murder-wizard: 剧本杀创作向导"""
     pass
@@ -102,6 +102,26 @@ def cache(project_name: str, clear: bool):
 
     if stats["entries"] > 0:
         console.print("\n[yellow]使用 --clear 清空缓存[/yellow]")
+
+
+@main.command()
+@click.argument("project_name")
+def audit(project_name: str):
+    """完整穿帮审计：深度分析角色剧本、信息矩阵、机制设计
+
+    基于信息矩阵逐格核对，检查：
+    - 角色是否提及当时不知道的信息（P1致命穿帮）
+    - 机制漏洞和平衡性问题
+    - 结局逻辑和唯一性
+
+    生成 audit_report.md，建议在上线前独立运行。
+
+    示例：
+      murder-wizard audit myproject
+    """
+    from murder_wizard.cli.commands import run_audit
+    session = SessionManager(project_name)
+    run_audit(session, console)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import signal
 from pathlib import Path
 from typing import Optional
 from rich.console import Console
+from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 from murder_wizard.wizard.session import SessionManager
@@ -458,6 +459,231 @@ class PhaseRunner:
         except Exception as e:
             self.console.print(f"[red]expand 失败：{e}[/red]")
             return False
+
+    def run_audit(self) -> bool:
+        """完整穿帮审计：基于信息矩阵深度分析所有穿帮问题
+
+        不同于阶段2后自动运行的轻量检查，audit 是独立命令，
+        做深度分析，包括：角色x事件矩阵逐格核对、逻辑漏洞、
+        阵营矛盾、结局合理性等。
+        """
+        self.console.print("[cyan]运行完整穿帮审计...[/cyan]")
+
+        characters_file = self.session.project_path / "characters.md"
+        matrix_file = self.session.project_path / "information_matrix.md"
+        mechanism_file = self.session.project_path / "mechanism.md"
+
+        if not characters_file.exists():
+            self.console.print("[red]缺少 characters.md，请先完成阶段2[/red]")
+            return False
+        if not matrix_file.exists():
+            self.console.print("[red]缺少 information_matrix.md，请先完成阶段2[/red]")
+            return False
+
+        characters = characters_file.read_text(encoding="utf-8")
+        matrix = matrix_file.read_text(encoding="utf-8")
+        mechanism = mechanism_file.read_text(encoding="utf-8") if mechanism_file.exists() else ""
+
+        try:
+            from rich.progress import Progress, SpinnerColumn, TextColumn
+
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("深度审计中（可能需要几分钟）...", total=None)
+
+                # 第一步：角色x事件逐格检查
+                response1 = self._call_llm(
+                    self._build_audit_matrix_prompt(characters, matrix),
+                    system="你是一个严格的剧本杀穿帮审计员，擅长逐格核对信息矩阵，发现最隐蔽的逻辑矛盾。",
+                    operation="audit_matrix_check"
+                )
+
+                # 第二步：机制一致性检查
+                response2 = self._call_llm(
+                    self._build_audit_mechanism_prompt(characters, matrix, mechanism),
+                    system="你是一个专业的剧本杀平衡性分析师，检查机制与角色行为的一致性。",
+                    operation="audit_mechanism_check"
+                )
+
+                # 第三步：结局逻辑验证
+                response3 = self._call_llm(
+                    self._build_audit_ending_prompt(characters, matrix),
+                    system="你是一个严格的剧本杀结局审计员，检查结局是否合理、是否有唯一解。",
+                    operation="audit_ending_check"
+                )
+
+            # 综合报告
+            report = self._compile_audit_report(
+                characters, matrix, mechanism,
+                response1.content, response2.content, response3.content
+            )
+
+            report_file = self.session.project_path / "audit_report.md"
+            report_file.write_text(report, encoding="utf-8")
+
+            total_cost = response1.cost + response2.cost + response3.cost
+            self._show_cost_warning(total_cost)
+
+            self.console.print(f"[green]审计报告已保存到：{report_file}[/green]")
+
+            # 高亮问题摘要
+            issues_found = self._summarize_audit_issues(response1, response2, response3)
+            if issues_found > 0:
+                self.console.print(f"[yellow]共发现 {issues_found} 个需要关注的问题[/yellow]")
+                self.console.print("请仔细阅读 audit_report.md 中的详细分析")
+            else:
+                self.console.print("[green]✓ 审计通过，未发现明显问题[/green]")
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"[red]审计失败：{e}[/red]")
+            return False
+
+    def _build_audit_matrix_prompt(self, characters: str, matrix: str) -> str:
+        """构建信息矩阵逐格审计 prompt"""
+        return f"""你是剧本杀严格审计员。请对以下角色剧本和信息矩阵进行逐格核对审计。
+
+## 任务
+对照信息矩阵，逐角色、逐事件检查角色剧本中的描述是否与矩阵一致。
+
+## 重点检查维度
+1. **知识边界**：角色是否在某个事件中提及了当时还不知道的信息？
+2. **时间线**：角色对事件的描述顺序是否符合矩阵中的时间线？
+3. **秘密泄露**：角色的秘密是否被其他角色意外知道（矩阵中不应存在的知识流动）？
+4. **视角真实性**：每个角色的"真相"是否与其矩阵中的角色设定一致？
+
+## 角色剧本
+{characters}
+
+## 信息矩阵
+{matrix}
+
+## 输出格式
+对每位角色输出：
+### 角色X：[角色名]
+- 问题列表（如无问题写"无"）
+- 每个问题格式：「在事件Y中，角色A不应该知道/说出Z，因为...」
+- 严重程度：P1（致命穿帮）/ P2（逻辑漏洞）/ P3（轻微不一致）
+
+最后给出总体评估：穿帮数量、是否建议上线。
+"""
+
+    def _build_audit_mechanism_prompt(self, characters: str, matrix: str, mechanism: str) -> str:
+        """构建机制一致性审计 prompt"""
+        return f"""你是剧本杀平衡性分析师。请检查角色行为是否符合机制设计。
+
+## 任务
+检查角色剧本中的行为是否与机制设计一致，是否存在机制漏洞。
+
+## 机制设计
+{mechanism}
+
+## 角色剧本
+{characters}
+
+## 信息矩阵
+{matrix}
+
+## 重点检查
+1. 阵营设定是否自洽？阵营技能是否与角色背景匹配？
+2. 投票机制是否有漏洞？是否存在"必定获胜"的策略？
+3. 搜证顺序是否影响结果？是否存在死路（无论怎么选都必输）？
+4. 关键事件是否有多解？还是只有一个正确解？
+5. 是否有角色在任何情况下都无法获胜（平衡性问题）？
+
+## 输出格式
+- 机制漏洞列表（P1/P2/P3）
+- 平衡性问题
+- 修改建议
+"""
+
+    def _build_audit_ending_prompt(self, characters: str, matrix: str) -> str:
+        """构建结局合理性审计 prompt"""
+        return f"""你是剧本杀结局审计员。请检查结局设计是否合理。
+
+## 任务
+验证剧本结局是否符合逻辑、是否有唯一解、是否让所有玩家都有参与感。
+
+## 角色剧本
+{characters}
+
+## 信息矩阵
+{matrix}
+
+## 重点检查
+1. 结局是否唯一？还是存在多个可能的结局？
+2. 触发结局的条件是否在游戏中可推理（不是随机）？
+3. 是否有角色在结局中"消失"（没有戏份）？
+4. 真相是否在游戏过程中可被发现？还是只能靠DM陈述？
+5. 结局是否给玩家留下深刻印象（记忆点）？
+
+## 输出格式
+- 结局分析
+- 问题列表
+- 优化建议
+"""
+
+    def _compile_audit_report(self, characters: str, matrix: str, mechanism: str,
+                               matrix_result: str, mechanism_result: str, ending_result: str) -> str:
+        """编译完整审计报告"""
+        return f"""# 剧本杀完整审计报告
+
+> 由 murder-wizard audit 自动生成
+> 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}
+
+## 一、信息矩阵逐格审计
+
+{matrix_result}
+
+---
+
+## 二、机制一致性审计
+
+{mechanism_result}
+
+---
+
+## 三、结局合理性审计
+
+{ending_result}
+
+---
+
+## 四、综合评估
+
+请根据以上三部分审计结果，综合评估：
+
+1. **是否可以上线**：是/否/需要修改
+2. **必须修复的问题**：（P1级别）
+3. **建议修复的问题**：（P2级别）
+4. **可选优化**：（P3级别）
+
+## 五、修复优先级
+
+| 优先级 | 问题 | 修复方式 |
+|--------|------|---------|
+| P1 | | |
+| P2 | | |
+| P3 | | |
+
+---
+
+*本报告由 AI 自动生成，仅供参考。实际体验测试仍不可替代。*
+"""
+
+    def _summarize_audit_issues(self, r1: LLMResponse, r2: LLMResponse, r3: LLMResponse) -> int:
+        """从三个审计结果中统计问题数量"""
+        total = 0
+        for response in [r1, r2, r3]:
+            content = response.content.lower()
+            # 简单统计 P1/P2/P3 出现次数
+            for _ in range(content.count("p1")):
+                total += 1
+            for _ in range(content.count("p2")):
+                total += 1
+            for _ in range(content.count("p3")):
+                total += 1
+        return total
 
     def _show_cost_warning(self, cost: float):
         """显示成本警告"""

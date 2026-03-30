@@ -213,3 +213,26 @@ def resume_project(session: SessionManager, console: Console):
 
     # 继续当前阶段
     show_status(session, console)
+
+
+def run_audit(session: SessionManager, console: Console):
+    """完整穿帮审计：对角色剧本、信息矩阵、机制设计进行深度分析
+
+    不同于阶段2后自动运行的轻量检查，audit 是独立命令，
+    做深度分析，生成完整审计报告。
+    """
+    state = session.load()
+
+    if state is None:
+        console.print("[red]未找到项目状态[/red]")
+        return
+
+    console.print(Panel.fit("[bold cyan]murder-wizard[/bold cyan] - 完整穿帮审计", border_style="cyan"))
+
+    try:
+        runner = PhaseRunner(session, state, console)
+        runner.run_audit()
+        console.print("\n[bold green]审计完成！[/bold green]")
+
+    except Exception as e:
+        console.print(f"[red]审计失败：{e}[/red]")
