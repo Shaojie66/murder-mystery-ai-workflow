@@ -457,8 +457,8 @@ class PhaseRunner:
                     {},
                 ))
 
-            def call_char_script(args):
-                o, m, p1, name = args
+            def call_char_script(o, m, p1, name):
+                """接受 4 个独立参数（由 run_parallel 的 *args 展开而来）"""
                 prompt = self._build_single_char_prompt(o, m, p1, name)
                 return self._call_llm(
                     prompt,
@@ -468,6 +468,9 @@ class PhaseRunner:
 
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成角色剧本...", total=None)
+                # run_parallel 做 call_fn(*args, **kwargs)，
+                # args = (outline, mechanism, phase1_response.content, char_name) 共 4 个元素，
+                # 故 call_char_script 接收 4 个独立参数而非 tuple
                 char_results = limiter.run_parallel(tasks, call_char_script)
 
             # 汇总结果

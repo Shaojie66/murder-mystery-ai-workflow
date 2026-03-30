@@ -1,6 +1,7 @@
 """Session persistence for murder-wizard projects."""
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -12,25 +13,33 @@ class SessionManager:
     """管理项目会话持久化"""
 
     def __init__(self, project_name: str, base_path: Optional[str] = None):
-        self.project_name = project_name
+        # 防止路径穿越：禁止 .. 成分和绝对路径
+        if ".." in project_name or os.path.isabs(project_name):
+            raise ValueError(f"Invalid project name: {project_name!r}")
+        # 禁止斜杠（防止子目录注入）
+        safe_name = project_name.replace("/", "_").replace("\\", "_")
+        self.project_name = safe_name
         if base_path is None:
             base_path = os.path.expanduser("~/.murder-wizard/projects")
         self.base_path = Path(base_path)
-        self.project_path = self.base_path / project_name
+        self.project_path = self.base_path / self.project_name
         self.session_file = self.project_path / "session.json"
         self.cost_log = self.project_path / "cost.log"
+        self._lock = threading.Lock()
 
     def ensure_project_dir(self) -> None:
         """确保项目目录存在"""
         self.project_path.mkdir(parents=True, exist_ok=True)
 
     def save(self, state: MurderWizardState) -> None:
-        """保存状态到 session.json"""
+        """保存状态到 session.json（线程安全，原子写入）"""
         self.ensure_project_dir()
         data = state.to_dict()
         data["saved_at"] = datetime.now().isoformat()
-        with open(self.session_file, "w", encoding="utf-8") as f:
+        tmp = self.session_file.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp.rename(self.session_file)
 
     def load(self) -> Optional[MurderWizardState]:
         """从 session.json 加载状态"""
@@ -45,16 +54,17 @@ class SessionManager:
             return None
 
     def log_cost(self, operation: str, tokens_used: int, cost: float) -> None:
-        """记录 API 消耗"""
-        self.ensure_project_dir()
-        entry = {
-            "timestamp": datetime.now().isoformat(),
-            "operation": operation,
-            "tokens": tokens_used,
-            "cost": cost,
-        }
-        with open(self.cost_log, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        """记录 API 消耗（线程安全）"""
+        with self._lock:
+            self.ensure_project_dir()
+            entry = {
+                "timestamp": datetime.now().isoformat(),
+                "operation": operation,
+                "tokens": tokens_used,
+                "cost": cost,
+            }
+            with open(self.cost_log, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def get_total_cost(self) -> float:
         """获取总消耗"""
