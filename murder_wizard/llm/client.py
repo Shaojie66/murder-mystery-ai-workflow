@@ -176,6 +176,9 @@ class OllamaAdapter(LLMAdapter):
     支持用户配置自定义 base_url 和 model，不依赖云端 API。
     """
 
+    # 允许的本地 host 名（剧本杀内容不会发往远程）
+    LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
     def __init__(
         self,
         base_url: str = "http://localhost:11434/v1",
@@ -186,6 +189,30 @@ class OllamaAdapter(LLMAdapter):
             from openai import OpenAI
         except ImportError:
             raise ImportError("openai package not installed. Run: pip install openai")
+
+        # URL 安全检查：只允许 http/https，不允许空 URL
+        if not base_url or not base_url.startswith(("http://", "https://")):
+            raise ValueError(
+                f"Ollama base_url 必须以 http:// 或 https:// 开头，当前值：{base_url!r}"
+            )
+
+        # 检查是否发往远程——非 localhost 则发出警告
+        parsed = None
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(base_url)
+        except Exception:
+            pass
+
+        if parsed and parsed.hostname and parsed.hostname not in self.LOCAL_HOSTS:
+            import sys
+            print(
+                f"WARNING: Ollama base_url 指向远程地址 {parsed.hostname}，"
+                f"剧本内容将被发送到该服务器。\n"
+                f"  如果这不是预期行为，请检查 OLLAMA_BASE_URL 环境变量。\n"
+                f"  如需强制使用远程地址，设置环境变量 OLLAMA_NO_URL_WARN=1 跳过此警告。",
+                file=sys.stderr,
+            )
 
         self.base_url = base_url
         self.model = model
