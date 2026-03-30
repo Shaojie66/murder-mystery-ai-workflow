@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.0] - 2026-03-30
+
+### Added
+
+#### murder-wizard CLI 工具
+
+- `murder_wizard` Python 包，setuptools 发版
+- 8 个 Click 命令：`init`、`status`、`phase`、`expand`、`resume`
+- `PhaseRunner` 阶段执行器，支持全部 8 阶段 LLM 调用
+- `PDFGenerator`：reportlab 生成剧本 PDF + 线索卡 PDF
+- `SessionManager`：JSON 持久化 + cost.log API 消耗记录
+- 状态机：Stage 枚举（7 个遗留状态 + 8 个新状态）
+- 原型模式：2 人 + 3 事件，expand 扩写为 6 人 + 5-7 事件
+
+#### 测试
+
+- `tests/test_state_machine.py` — 13 个测试
+- `tests/test_session.py` — 11 个测试
+- `tests/test_llm_client.py` — 5 个测试
+- 全部 25 个测试通过
+
+#### 标准仓库文件
+
+- `.gitignore` — Python 标准忽略规则
+- `LICENSE` — MIT 许可证
+- `CONTRIBUTING.md` — 贡献指南
+- `pyproject.toml` — 完整元数据（keywords、classifiers、urls）
+- 重写 `README.md` — CLI 工具导向，含快速开始、命令表、工作流图
+
+### Fixed
+
+- `session.py recover_from_files()`：错误使用 `state.Stage` → 修正为模块级 `Stage` 导入
+- `phase_runner.py`：修复两个未关闭的 f-string 多行 triple-quote
+
+---
+
 ## [2.0.0] - 2026-03-30
 
 ### Added
