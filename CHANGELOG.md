@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.0] - 2026-03-30
+
+### Added
+
+#### LLM 缓存
+- `LLMCache`（`murder_wizard/llm/cache.py`）：基于 SHA256(prompt+system+operation+model) 缓存 LLM 响应
+- 缓存在项目目录 `cache.json`，避免重复 API 调用
+- `murder-wizard cache <name>`：查看缓存统计
+- `murder-wizard cache <name> --clear`：清空缓存
+
+#### 轻量穿帮检查
+- 阶段2角色剧本生成后自动触发 `_run_consistency_check()`
+- 检查角色与信息矩阵的明显矛盾（时间线/知识盲区/秘密泄露）
+- 结果保存为 `consistency_report.md`
+
+#### 文档
+- `docs/expand-spec.md`：expand 操作完整规范（扩展单位/保留字段/幂等性/限制）
+
+#### 测试
+- `tests/test_llm_cache.py`：8 个缓存测试
+- 全部 33 个测试通过
+
+---
+
 ## [0.1.0] - 2026-03-30
 
 ### Added

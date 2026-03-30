@@ -4,14 +4,18 @@
 
 ### P1
 
-- [ ] **TODO 0: 定义 expand 操作规范** ⭐来自 outside voice
-  expand 操作的完整契约：扩展单位（outline→scene？character→full script？）、保留字段（哪些不可变）、可扩展字段（哪些可新生成）、幂等性（多次expand结果是否一致）、依赖传播（展开角色背景是否更新动机/线索/时间线）。
-  **Effort**: S | **Depends**: 无，第一批前必须完成
+- [x] **TODO 0: 定义 expand 操作规范** ⭐来自 outside voice (已实现)
+  完整契约定义于 `docs/expand-spec.md`。
 
 - [ ] **TODO 1: 实现轻量穿帮检查**
   在阶段2的 LLM 生成后，自动检测明显穿帮（角色提及当时不知道的信息）。
   采用 dual-llm 架构：主 LLM 生成内容，轻量 LLM 做快速穿帮检测。
   **Effort**: S | **Depends**: 阶段2 prompt 开发完成
+
+- [x] **TODO 1: 实现轻量穿帮检查** (已实现)
+  阶段2角色剧本生成后自动触发 `_run_consistency_check()`，检测角色与信息矩阵的明显矛盾。
+  结果保存为 `consistency_report.md`。
+  **Effort**: S
 
 - [ ] **TODO 2: 实现完整 audit 命令**
   `murder-wizard audit` 全量检测，基于信息矩阵深度分析穿帮。
@@ -20,9 +24,10 @@
 
 ### P2
 
-- [ ] **TODO 3: LLM 调用缓存**
-  相同输入（stage + user input）缓存结果到本地 JSON，避免重复 API 调用。
-  **Effort**: S | **Depends**: 无
+- [x] **TODO 3: LLM 调用缓存** (已实现)
+  `LLMCache` 类基于 SHA256(prompt+system+operation+model) 缓存 LLM 响应。
+  缓存在项目目录 `cache.json`，`murder-wizard cache <name>` 查看统计，`--clear` 清空。
+  **Effort**: S
 
 - [ ] **TODO 4: 并发控制**
   expand 时控制多角色并行生成的速度，避免触发 API 速率限制。

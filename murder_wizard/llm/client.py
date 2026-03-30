@@ -18,6 +18,8 @@ class LLMResponse:
 class LLMAdapter(ABC):
     """LLM 适配器基类"""
 
+    model: str  # 子类必须定义
+
     @abstractmethod
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
         """同步完成调用"""

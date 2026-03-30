@@ -10,6 +10,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
 from murder_wizard.llm.client import create_llm_adapter, LLMResponse
+from murder_wizard.llm.cache import LLMCache
 
 
 class PhaseRunner:
@@ -20,6 +21,7 @@ class PhaseRunner:
         self.state = state
         self.console = console
         self.llm = None
+        self._cache = LLMCache(session.project_path)
         self._setup_llm()
 
     def _setup_llm(self):
@@ -32,9 +34,18 @@ class PhaseRunner:
             raise
 
     def _call_llm(self, prompt: str, system: str = "", operation: str = "llm_call") -> LLMResponse:
-        """调用 LLM，带重试和成本记录"""
+        """调用 LLM，带缓存、重试和成本记录"""
+        # 缓存查找
+        cached = self._cache.get(operation, prompt, system, self.llm.model)
+        if cached is not None:
+            self.console.print(f"[dim]缓存命中：{operation}（节省 ¥{cached.cost:.4f}）[/dim]")
+            self.session.log_cost(operation + "_cache_hit", 0, 0)
+            return cached
+
         try:
             response = self.llm.complete(prompt, system=system)
+            # 写入缓存
+            self._cache.set(operation, prompt, system, self.llm.model, response)
             self.session.log_cost(operation, response.tokens_used, response.cost)
             return response
         except Exception as e:
@@ -175,6 +186,10 @@ class PhaseRunner:
             self.console.print(f"[green]角色信息矩阵已保存到：{matrix_file}[/green]")
             self.console.print(f"[green]角色剧本已保存到：{chars_file}[/green]")
             self._show_cost_warning(matrix_response.cost + char_response.cost)
+
+            # 轻量穿帮检查
+            self._run_consistency_check(char_response.content, matrix_response.content)
+
             return True
 
         except Exception as e:
@@ -214,6 +229,55 @@ class PhaseRunner:
 
 原型模式：2人表格，3条事件线。
 """
+
+    def _run_consistency_check(self, characters: str, matrix: str) -> None:
+        """轻量穿帮检查：检测角色剧本与信息矩阵的明显矛盾"""
+        self.console.print("\n[cyan]运行穿帮检查...[/cyan]")
+
+        prompt = self._build_consistency_check_prompt(characters, matrix)
+        try:
+            response = self._call_llm(
+                prompt,
+                system="你是一个严格的剧本杀穿帮检测员。简洁输出，只报告发现的问题，不要废话。",
+                operation="consistency_check"
+            )
+
+            # 检查是否有发现问题
+            content = response.content.lower().strip()
+            if any(word in content for word in ["无穿帮", "未发现", "没有矛盾", "一致"]):
+                self.console.print("[green]✓ 穿帮检查通过，未发现明显矛盾[/green]")
+            else:
+                self.console.print("[yellow]⚠ 穿帮检查发现以下问题：[/yellow]")
+                self.console.print(Panel(response.content[:1000], border_style="yellow"))
+
+            # 保存检查报告
+            report_file = self.session.project_path / "consistency_report.md"
+            report_file.write_text(response.content, encoding="utf-8")
+
+        except Exception as e:
+            self.console.print(f"[yellow]穿帮检查失败：{e}（不影响阶段完成）[/yellow]")
+
+    def _build_consistency_check_prompt(self, characters: str, matrix: str) -> str:
+        """构建穿帮检查 prompt"""
+        return f"""请检查以下角色剧本与信息矩阵是否存在明显穿帮。
+
+重点检查：
+1. 角色是否提及了当时还不知道的信息
+2. 时间线是否矛盾（如：角色在某事件前就已知某事）
+3. 秘密/隐瞒信息是否被其他角色意外暴露
+4. 阵营设定是否自相矛盾
+
+角色剧本：
+{characters}
+
+信息矩阵：
+{matrix}
+
+请逐角色检查，输出格式：
+- 无穿帮：输出"穿帮检查通过"
+- 有穿帮：列出每个问题，格式为"角色X：在Y事件中本不应该知道Z信息"
+
+检查结论："""
 
     def _build_characters_prompt(self, matrix: str) -> str:
         """构建角色剧本 prompt"""

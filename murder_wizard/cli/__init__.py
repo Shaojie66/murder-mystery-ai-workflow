@@ -77,5 +77,32 @@ def resume(project_name: str):
     resume_project(session, console)
 
 
+@main.command()
+@click.argument("project_name")
+@click.option("--clear", is_flag=True, help="清空缓存")
+def cache(project_name: str, clear: bool):
+    """查看或管理 LLM 缓存
+
+    缓存基于 prompt+system+operation 的 hash，重复调用同一阶段时直接返回缓存结果。
+    """
+    from murder_wizard.llm.cache import LLMCache
+    from murder_wizard.wizard.session import SessionManager
+
+    session = SessionManager(project_name)
+    cache = LLMCache(session.project_path)
+
+    if clear:
+        cache.clear()
+        console.print("[green]缓存已清空[/green]")
+        return
+
+    stats = cache.stats()
+    console.print(f"[cyan]缓存条目：{stats['entries']}[/cyan]")
+    console.print(f"[cyan]缓存大小：{stats['size_bytes']} bytes[/cyan]")
+
+    if stats["entries"] > 0:
+        console.print("\n[yellow]使用 --clear 清空缓存[/yellow]")
+
+
 if __name__ == "__main__":
     main()
