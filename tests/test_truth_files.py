@@ -182,7 +182,6 @@ class TestReviserHelpers:
                 r"(?<=## 修复内容\n).*(?=##|$)",
                 r"(?<=## 修复后内容\n).*(?=##|$)",
                 r"(?<=## 角色剧本\n).*(?=##|$)",
-                r"(?<=## 修复清单\n).*(?=##|$)",
             ]
             for pattern in patterns:
                 match = re.search(pattern, revision_output, re.DOTALL)

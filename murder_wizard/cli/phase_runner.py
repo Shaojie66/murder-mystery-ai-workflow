@@ -829,7 +829,7 @@ Phase 1 扩写内容：
             else:
                 self.console.print("[green]✓ 审计通过，所有 P0 问题已清除[/green]")
 
-            return True
+            return final_p0 == 0
 
         except Exception as e:
             self.console.print(f"[red]审计失败：{e}[/red]")
@@ -938,7 +938,6 @@ Phase 1 扩写内容：
             r"(?<=## 修复内容\n).*(?=##|$)",
             r"(?<=## 修复后内容\n).*(?=##|$)",
             r"(?<=## 角色剧本\n).*(?=##|$)",
-            r"(?<=## 修复清单\n).*(?=##|$)",
         ]
 
         for pattern in patterns:
