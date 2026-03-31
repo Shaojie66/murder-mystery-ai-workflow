@@ -77,6 +77,8 @@ murder-wizard status myproject
 | `murder-wizard phase <name> <n>` | 运行阶段 1-8 |
 | `murder-wizard expand <name>` | 原型扩写为完整版 |
 | `murder-wizard resume <name>` | 从中断处继续 |
+| `murder-wizard audit <name>` | 完整穿帮审计（上线前必做） |
+| `murder-wizard cache <name>` | 查看/清空 LLM 缓存 |
 
 ## 原型模式
 
@@ -96,7 +98,7 @@ murder-wizard init myproject --full --type mechanic
 ~/.murder-wizard/projects/<name>/
 ├── outline.md              # 大纲
 ├── mechanism.md           # 机制设计
-├── information_matrix.md   # 信息矩阵
+├── information_matrix.md   # 信息矩阵（Markdown）
 ├── characters.md          # 角色剧本
 ├── image-prompts.md       # 图像提示词
 ├── test_guide.md         # 测试指南
@@ -107,7 +109,11 @@ murder-wizard init myproject --full --type mechanic
 │   ├── 角色图/
 │   ├── 海报/
 │   └── 卡牌/
-└── cost.log             # API 消耗日志
+├── state/                # JSON 真相文件（v0.6.0+）
+│   ├── character_matrix.json  # 角色×事件信息矩阵
+│   └── .backups/         # 自动备份（immutable）
+├── cost.log             # API 消耗日志
+└── audit_report.md      # 完整穿帮审计报告
 ```
 
 ## 配置
