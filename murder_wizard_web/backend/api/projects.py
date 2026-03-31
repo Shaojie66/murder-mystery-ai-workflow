@@ -122,7 +122,7 @@ async def list_projects():
             "artifact_count": sum(1 for a in artifacts.values() if a.exists),
         })
 
-    projects.sort(key=lambda p: p.get("created_at", ""), reverse=True)
+    projects.sort(key=lambda p: p.get("created_at") or "", reverse=True)
     return {"projects": projects}
 
 

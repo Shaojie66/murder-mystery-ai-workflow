@@ -54,6 +54,31 @@ async def list_files(project_name: str):
     return {"files": sorted(files, key=lambda x: x["name"])}
 
 
+@router.get("/{filename:path}/download")
+async def download_file(project_name: str, filename: str):
+    """Download a file."""
+    from fastapi.responses import FileResponse
+
+    project_path = MURDER_WIZARD_BASE / project_name
+    if not project_path.exists():
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if ".." in filename or filename.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    file_path = project_path / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    media_type = "application/pdf" if filename.endswith(".pdf") else "application/octet-stream"
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type=media_type,
+    )
+
+
 @router.get("/{filename:path}")
 async def get_file(project_name: str, filename: str):
     """Get file content."""
@@ -109,28 +134,3 @@ async def save_file(project_name: str, filename: str, req: SaveFileRequest):
         "size": stat.st_size,
         "modified": str(stat.st_mtime),
     }
-
-
-@router.get("/{filename:path}/download")
-async def download_file(project_name: str, filename: str):
-    """Download a file."""
-    from fastapi.responses import FileResponse
-
-    project_path = MURDER_WIZARD_BASE / project_name
-    if not project_path.exists():
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    if ".." in filename or filename.startswith("/"):
-        raise HTTPException(status_code=400, detail="Invalid filename")
-
-    file_path = project_path / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-
-    media_type = "application/pdf" if filename.endswith(".pdf") else "application/octet-stream"
-
-    return FileResponse(
-        path=file_path,
-        filename=filename,
-        media_type=media_type,
-    )
