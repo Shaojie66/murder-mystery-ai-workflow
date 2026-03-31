@@ -23,7 +23,8 @@ class TestMurderWizardState:
         data = state.to_dict()
         assert data["project_name"] == "test"
         assert data["story_type"] == "emotion"
-        assert data["current_stage"] == "stage_1_mechanism"
+        assert data["current_stage"] == Stage.STAGE_1_MECHANISM.value
+        assert data["current_stage_slug"] == "stage_1_mechanism"
         assert data["outline"] == "# Test Outline"
         assert data["is_prototype"] == True
 
@@ -73,10 +74,16 @@ class TestMurderWizardState:
 
 class TestStage:
     def test_stage_values(self):
-        assert Stage.STAGE_1_MECHANISM.value == "stage_1_mechanism"
-        assert Stage.STAGE_4_TEST.value == "stage_4_test"
-        assert Stage.STAGE_8_COMMUNITY.value == "stage_8_community"
+        assert Stage.STAGE_1_MECHANISM.value < Stage.STAGE_4_TEST.value
+        assert Stage.STAGE_4_TEST.value < Stage.STAGE_8_COMMUNITY.value
+        assert Stage.STAGE_1_MECHANISM.slug == "stage_1_mechanism"
+        assert Stage.STAGE_4_TEST.slug == "stage_4_test"
+        assert Stage.STAGE_8_COMMUNITY.slug == "stage_8_community"
 
     def test_stage_from_string(self):
-        stage = Stage("stage_2_script")
+        stage = Stage.from_value("stage_2_script")
+        assert stage == Stage.STAGE_2_SCRIPT
+
+    def test_stage_from_numeric_value(self):
+        stage = Stage.from_value(Stage.STAGE_2_SCRIPT.value)
         assert stage == Stage.STAGE_2_SCRIPT

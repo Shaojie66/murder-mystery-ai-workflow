@@ -37,9 +37,9 @@ def show_status(session: SessionManager, console: Console):
     current = state.current_stage
 
     for stage_enum, name, artifacts in stages:
-        if current.value > stage_enum.value:
+        if current > stage_enum:
             status = "[green]✓ 已完成[/green]"
-        elif current.value == stage_enum.value:
+        elif current == stage_enum:
             status = "[yellow]→ 进行中[/yellow]"
         else:
             status = "[dim]○ 待开始[/dim]"
@@ -215,7 +215,7 @@ def resume_project(session: SessionManager, console: Console):
         console.print("[yellow]从输出文件恢复项目状态[/yellow]")
 
     console.print(f"[green]已恢复：{state.project_name}[/green]")
-    console.print(f"当前阶段：{state.current_stage.value}")
+    console.print(f"当前阶段：{state.current_stage.slug}")
 
     if state.is_prototype:
         console.print("[yellow]原型模式 - 可运行 expand[/yellow]")

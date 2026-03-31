@@ -42,6 +42,22 @@ class TestSessionManager:
         result = self.session.load()
         assert result is None
 
+    def test_load_returns_none_for_invalid_stage_value(self):
+        self.session.ensure_project_dir()
+        self.session.session_file.write_text(
+            json.dumps(
+                {
+                    "project_name": self.project_name,
+                    "story_type": "mechanic",
+                    "current_stage": "not-a-stage",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.session.load()
+        assert result is None
+
     def test_save_creates_directory(self):
         state = MurderWizardState(project_name=self.project_name)
         assert not self.session.project_path.exists()

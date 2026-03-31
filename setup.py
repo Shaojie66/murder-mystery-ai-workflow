@@ -13,7 +13,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "murder-wizard=murder_wizard.cli:cli",
+            "murder-wizard=murder_wizard.cli:main",
         ],
     },
     author="",

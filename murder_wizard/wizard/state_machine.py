@@ -3,30 +3,47 @@
 State transitions:
 IDLE -> TYPE_SELECT -> STORY_BRIEF -> CHARACTER_DESIGN -> PLOT_BUILD -> ASSET_PROMPT -> OUTPUT
 """
-from enum import Enum
-from dataclasses import dataclass, field
+from enum import IntEnum
+from dataclasses import dataclass
 from typing import Optional
 
 
-class Stage(str, Enum):
+class Stage(IntEnum):
     """剧本杀创作阶段"""
-    IDLE = "idle"
-    TYPE_SELECT = "type_select"
-    STORY_BRIEF = "story_brief"
-    CHARACTER_DESIGN = "character_design"
-    PLOT_BUILD = "plot_build"
-    ASSET_PROMPT = "asset_prompt"
-    OUTPUT = "output"
+    IDLE = 0
+    TYPE_SELECT = 1
+    STORY_BRIEF = 2
+    CHARACTER_DESIGN = 3
+    PLOT_BUILD = 4
+    ASSET_PROMPT = 5
+    OUTPUT = 6
 
     # 完整8阶段
-    STAGE_1_MECHANISM = "stage_1_mechanism"
-    STAGE_2_SCRIPT = "stage_2_script"
-    STAGE_3_VISUAL = "stage_3_visual"
-    STAGE_4_TEST = "stage_4_test"
-    STAGE_5_COMMERCIAL = "stage_5_commercial"
-    STAGE_6_PRINT = "stage_6_print"
-    STAGE_7_PROMO = "stage_7_promo"
-    STAGE_8_COMMUNITY = "stage_8_community"
+    STAGE_1_MECHANISM = 7
+    STAGE_2_SCRIPT = 8
+    STAGE_3_VISUAL = 9
+    STAGE_4_TEST = 10
+    STAGE_5_COMMERCIAL = 11
+    STAGE_6_PRINT = 12
+    STAGE_7_PROMO = 13
+    STAGE_8_COMMUNITY = 14
+
+    @property
+    def slug(self) -> str:
+        """稳定的字符串标识，用于持久化和展示。"""
+        return _STAGE_SLUGS[self]
+
+    @classmethod
+    def from_value(cls, value: "Stage | int | str") -> "Stage":
+        """兼容旧字符串值和新数值。"""
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, str):
+            try:
+                return _STAGE_FROM_SLUG[value]
+            except KeyError as exc:
+                raise ValueError(f"Unknown stage: {value}") from exc
+        return cls(value)
 
 
 @dataclass
@@ -81,6 +98,7 @@ class MurderWizardState:
             "project_name": self.project_name,
             "story_type": self.story_type,
             "current_stage": self.current_stage.value,
+            "current_stage_slug": self.current_stage.slug,
             "outline": self.outline,
             "characters": self.characters,
             "plot": self.plot,
@@ -95,7 +113,9 @@ class MurderWizardState:
         state = cls(
             project_name=data["project_name"],
             story_type=data.get("story_type", "mechanic"),
-            current_stage=Stage(data.get("current_stage", "idle")),
+            current_stage=Stage.from_value(
+                data.get("current_stage", data.get("current_stage_slug", "idle"))
+            ),
             outline=data.get("outline"),
             characters=data.get("characters"),
             plot=data.get("plot"),
@@ -104,3 +124,24 @@ class MurderWizardState:
             prototype_characters=data.get("prototype_characters"),
         )
         return state
+
+
+_STAGE_SLUGS = {
+    Stage.IDLE: "idle",
+    Stage.TYPE_SELECT: "type_select",
+    Stage.STORY_BRIEF: "story_brief",
+    Stage.CHARACTER_DESIGN: "character_design",
+    Stage.PLOT_BUILD: "plot_build",
+    Stage.ASSET_PROMPT: "asset_prompt",
+    Stage.OUTPUT: "output",
+    Stage.STAGE_1_MECHANISM: "stage_1_mechanism",
+    Stage.STAGE_2_SCRIPT: "stage_2_script",
+    Stage.STAGE_3_VISUAL: "stage_3_visual",
+    Stage.STAGE_4_TEST: "stage_4_test",
+    Stage.STAGE_5_COMMERCIAL: "stage_5_commercial",
+    Stage.STAGE_6_PRINT: "stage_6_print",
+    Stage.STAGE_7_PROMO: "stage_7_promo",
+    Stage.STAGE_8_COMMUNITY: "stage_8_community",
+}
+
+_STAGE_FROM_SLUG = {slug: stage for stage, slug in _STAGE_SLUGS.items()}

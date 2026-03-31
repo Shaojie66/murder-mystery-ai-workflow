@@ -33,13 +33,14 @@ class SessionManager:
 
     def save(self, state: MurderWizardState) -> None:
         """保存状态到 session.json（线程安全，原子写入）"""
-        self.ensure_project_dir()
-        data = state.to_dict()
-        data["saved_at"] = datetime.now().isoformat()
-        tmp = self.session_file.with_suffix(".json.tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        tmp.rename(self.session_file)
+        with self._lock:
+            self.ensure_project_dir()
+            data = state.to_dict()
+            data["saved_at"] = datetime.now().isoformat()
+            tmp = self.session_file.with_suffix(".json.tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            tmp.rename(self.session_file)
 
     def load(self) -> Optional[MurderWizardState]:
         """从 session.json 加载状态"""
@@ -49,7 +50,7 @@ class SessionManager:
             with open(self.session_file, encoding="utf-8") as f:
                 data = json.load(f)
             return MurderWizardState.from_dict(data)
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError, ValueError):
             # session.json 损坏，返回 None
             return None
 
