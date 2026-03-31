@@ -33,6 +33,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 #### 测试
 - `tests/test_truth_files.py`：13 个测试（TruthFileManager、CharacterMatrix、Delta、Reviser helpers）
 
+### Fixed
+
+- `_extract_json_from_response`（`phase_runner.py`）：正则只匹配一层嵌套 JSON，替换为 brace-counting 算法正确处理多层嵌套
+- `add_evidence`（`truth_files.py`）：方法返回 matrix 但从未持久化，替换为 `add_evidence_to_matrix` 原子写入
+- `information_matrix_json`（`loader.py`）：与 `information_matrix` 完全相同（未实现 JSON-only 模式），添加 `{{#if json_only}}` 条件模板块
+- `_apply_op`（`truth_files.py`）：条件 `op.op == "update" and op.op in ["add","update"]` 永远为 False，修复为 `op.op in ["add","update","replace"]`
+- `_count_p0_issues`（`phase_runner.py`）：正则遗漏常见 LLM 输出格式（P0：3、P0（3）、P0问题3个等），扩展 pattern 列表
+- 死方法 `_summarize_audit_issues`（`phase_runner.py`）：AST 分析发现定义但从未调用，已移除
+
 ---
 
 ## [0.5.0] - 2026-03-30
