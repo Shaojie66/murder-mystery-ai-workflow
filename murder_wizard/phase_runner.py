@@ -103,6 +103,7 @@ class PhaseRunner:
         """Save project state to file."""
         state_file = self.project_dir / "murder-wizard-session.json"
         state["updated_at"] = datetime.now().isoformat()
+        state["story_type"] = self.story_type  # Persist story_type
         with open(state_file, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2, ensure_ascii=False)
 
