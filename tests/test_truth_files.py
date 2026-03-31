@@ -173,44 +173,69 @@ class TestReviserHelpers:
         assert count_p0("无 P0 问题") == 0
         assert count_p0("") == 0
 
-    def test_extract_revised_content_code_block(self):
-        """Extract revised content from Reviser markdown output via code fence."""
+    def test_extract_revised_content_rejects_fix_list(self):
+        """_extract_revised_content must NOT accept ## 修复清单 as valid content.
+
+        This was the original bug: the fix list section was accepted as replacement
+        content even though it's just bullet points, not actual script.
+        """
         import re
 
         def extract(revision_output, original):
+            script_markers = ["角色", "场景", "剧本", "对白", "叙述", "事件"]
             patterns = [
-                r"(?<=## 修复内容\n).*(?=##|$)",
-                r"(?<=## 修复后内容\n).*(?=##|$)",
-                r"(?<=## 角色剧本\n).*(?=##|$)",
+                r"(?<=## 完整角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
+                r"(?<=## 修复后角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
+                r"(?<=## 角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
             ]
             for pattern in patterns:
                 match = re.search(pattern, revision_output, re.DOTALL)
-                if match and len(match.group(0).strip()) > 100:
-                    return match.group(0).strip()
+                if match:
+                    content = match.group(1).strip()
+                    marker_count = sum(1 for m in script_markers if m in content)
+                    if marker_count >= 3 and len(content) > 200:
+                        return content
             code_blocks = re.findall(r"```(?:markdown)?\n(.*?)```", revision_output, re.DOTALL)
             for block in code_blocks:
-                if len(block.strip()) > len(original) * 0.5 and "角色" in block:
-                    return block.strip()
+                block = block.strip()
+                marker_count = sum(1 for m in script_markers if m in block)
+                if marker_count >= 3 and len(block) > len(original) * 0.3:
+                    return block
             return original
 
-        # Too short to match (>100 chars needed)
-        short_output = "## 修复内容\n\n这里是修复后的角色剧本内容...\n## 其他章节\n"
-        assert extract(short_output, "x" * 200) == "x" * 200
+        # ## 修复清单 must NOT be accepted (the original bug)
+        fix_list_only = """## 修复清单
 
-        # Code block with "角色" keyword should match
-        # Block must be > 50% of original length
-        long_original = "原始内容" * 5  # 20 chars
-        code_output = """## 修复清单
-修复了一些问题
-
-```markdown
-## 修复后的角色剧本
-
-这是新的角色剧本内容，角色张三有了新的设定
-```
+### 修复 1：P0-1 - 认知泄露
+**涉及**：角色张三，事件E1
+**修复内容**：
+- 原文：张三知道妹妹的死因
+- 改为：张三不知道妹妹的死因
 """
-        result = extract(code_output, long_original)
-        assert "修复后的角色剧本" in result
+        original = "角色" * 100
+        result = extract(fix_list_only, original)
+        assert result == original, "## 修复清单 should not be accepted as valid script"
+
+        # ## 完整角色剧本 section should match via section-based extraction
+        # (content ends at string boundary, \Z)
+        full_script = (
+            '## 完整角色剧本\n\n'
+            '### 角色：张三\n'
+            '场景：家中客厅，深夜时分\n'
+            '事件：深夜凶杀案\n'
+            '对白：张三说："我知道真相。"补充。\n'
+            '叙述：张三缓缓站起身，目光扫过在场的每一个人。房间里的气氛骤然紧张起来。\n'
+            '场景：书房门口\n'
+            '对白：李四喊道："站住！别想逃跑！"\n'
+            '叙述：李四的手紧紧握着门把手，似乎随时准备阻止任何人离开。\n'
+            '事件：保险箱被打开\n'
+            '对白：王五说："保险箱里的文件不见了！"\n'
+            '叙述：王五的脸色变得苍白，额头上渗出了细密的汗珠。\n'
+        )
+        original = "x" * 50
+        result = extract(full_script, original)
+        # Must extract the section content (has ≥3 script markers)
+        assert "场景" in result and "事件" in result and "对白" in result
 
 
 

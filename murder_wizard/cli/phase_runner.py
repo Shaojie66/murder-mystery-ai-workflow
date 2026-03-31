@@ -811,6 +811,12 @@ Phase 1 扩写内容：
                 else:
                     self.console.print("[yellow]Reviser 未能完成修复[/yellow]")
 
+            # 如果有修订内容，写回 characters.md（供后续阶段使用）
+            original_characters = characters_file.read_text(encoding="utf-8")
+            if current_characters != original_characters:
+                characters_file.write_text(current_characters, encoding="utf-8")
+                self.console.print("[green]✓ 修订内容已写回 characters.md[/green]")
+
             # 生成最终综合报告
             report = self._compile_audit_report(
                 current_characters, current_matrix, mechanism, all_audit_rounds
@@ -928,30 +934,42 @@ Phase 1 扩写内容：
     def _extract_revised_content(self, revision_output: str, original: str) -> str:
         """从 Reviser 输出中提取修复后的角色剧本内容。
 
-        Reviser 输出格式中，修复后的剧本内容会在标记为 "## 修复内容"
-        或 "## 角色剧本" 的章节之后。如果找不到，保留原内容。
+        只接受包含实际角色剧本内容的章节（角色名、场景描述、对话等）。
+        不会接受 ## 修复清单 这种只包含修复描述的章节。
+        如果找不到有效的完整剧本内容，保留原内容。
         """
         import re
 
-        # Look for markdown headers that indicate revised content
+        # Required markers that indicate actual script content (not just a fix list)
+        script_markers = ["角色", "场景", "剧本", "对白", "叙述", "事件"]
+
+        # Section-based extraction: only these specific headers are valid
+        # DO NOT accept ## 修复清单 — that's a bullet list, not script content
         patterns = [
-            r"(?<=## 修复内容\n).*(?=##|$)",
-            r"(?<=## 修复后内容\n).*(?=##|$)",
-            r"(?<=## 角色剧本\n).*(?=##|$)",
+            r"(?<=## 完整角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
+            r"(?<=## 修复后角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
+            r"(?<=## 角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
         ]
 
         for pattern in patterns:
             match = re.search(pattern, revision_output, re.DOTALL)
-            if match and len(match.group(0).strip()) > 100:
-                return match.group(0).strip()
+            if match:
+                content = match.group(1).strip()
+                # Must contain at least 3 script-like markers to be valid
+                marker_count = sum(1 for m in script_markers if m in content)
+                if marker_count >= 3 and len(content) > 200:
+                    return content
 
-        # Try to extract content between ```markdown fences
+        # Fallback: extract from ```markdown code blocks
         code_blocks = re.findall(r"```(?:markdown)?\n(.*?)```", revision_output, re.DOTALL)
         for block in code_blocks:
-            if len(block.strip()) > len(original) * 0.5 and "角色" in block:
-                return block.strip()
+            block = block.strip()
+            marker_count = sum(1 for m in script_markers if m in block)
+            # Require at least 3 script markers AND block must be >30% of original size
+            if marker_count >= 3 and len(block) > len(original) * 0.3:
+                return block
 
-        # No extraction possible — return original
+        # No valid extraction possible
         return original
 
     def _build_audit_matrix_prompt(self, characters: str, matrix: str) -> str:
