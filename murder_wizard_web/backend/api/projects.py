@@ -92,10 +92,10 @@ async def list_projects():
         if session_file.exists():
             try:
                 session_data = json.loads(session_file.read_text(encoding="utf-8"))
-                state_data = session_data.get("state", {})
-                stage = state_data.get("current_stage", "idle")
-                story_type = state_data.get("story_type", "mechanic")
-                is_prototype = state_data.get("is_prototype", True)
+                # MurderWizardState.to_dict() serializes to top level, not under "state"
+                stage = session_data.get("current_stage", "idle")
+                story_type = session_data.get("story_type", "mechanic")
+                is_prototype = session_data.get("is_prototype", True)
                 created_at = session_data.get("created_at")
                 if isinstance(created_at, (int, float)):
                     import datetime
@@ -193,7 +193,7 @@ async def get_project(name: str):
     artifacts = _list_artifacts(project_path)
 
     # Determine stage from artifacts and state
-    current_stage = state.current_stage.value if state.current_stage else "idle"
+    current_stage = state.current_stage.slug if state.current_stage else "idle"
 
     # Check if expand is available (has stage 2 done, is prototype)
     can_expand = (
