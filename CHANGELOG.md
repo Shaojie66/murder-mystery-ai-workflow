@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.0] - 2026-03-31
+
+### Added
+
+#### JSON Truth File 系统
+- `TruthFileManager`（`murder_wizard/wizard/truth_files.py`）：JSON 真相文件管理器
+  - Pydantic 验证 + 每次写入自动备份（immutable history）
+  - Delta 生成（增量更新，避免 context window bloat）
+  - Markdown 迁移（从 `information_matrix.md` 迁移到 JSON）
+  - 审计 helpers（角色认知完整性、凶手知识充足性）
+- `schemas.py`（`murder_wizard/wizard/schemas.py`）：Pydantic 模型
+  - `CharacterMatrix`：角色×事件信息矩阵
+  - `TruthDelta`：增量更新格式（add/update/delete/replace）
+  - `GameState`、`PendingHooksFile`、`ChapterSummariesFile` 等
+
+#### Reviser 自动修复循环
+- `run_audit()` 重构：Auditor → Reviser → Re-audit 循环（最多3轮）
+- 每轮运行三轮审计：信息矩阵 / 机制一致性 / 结局合理性
+- 发现 P0 问题 → Reviser 自动修复 → 重新审计
+- `05_reviser.md`：Reviser prompt 模板
+- `02_script_generation.md`：新增结构化 JSON 输出说明
+
+#### Design Context
+- `.impeccable.md`：设计决策文档（用户、Brand Personality、Aesthetic Direction、Design Principles）
+- `CLAUDE.md` 新增 Design Context 小节
+
+#### 测试
+- `tests/test_truth_files.py`：13 个测试（TruthFileManager、CharacterMatrix、Delta、Reviser helpers）
+
+### Fixed
+
+- `_extract_json_from_response`（`phase_runner.py`）：正则只匹配一层嵌套 JSON，替换为 brace-counting 算法正确处理多层嵌套
+- `add_evidence`（`truth_files.py`）：方法返回 matrix 但从未持久化，替换为 `add_evidence_to_matrix` 原子写入
+- `information_matrix_json`（`loader.py`）：与 `information_matrix` 完全相同（未实现 JSON-only 模式），添加 `{{#if json_only}}` 条件模板块
+- `_apply_op`（`truth_files.py`）：条件 `op.op == "update" and op.op in ["add","update"]` 永远为 False，修复为 `op.op in ["add","update","replace"]`
+- `_count_p0_issues`（`phase_runner.py`）：正则遗漏常见 LLM 输出格式（P0：3、P0（3）、P0问题3个等），扩展 pattern 列表
+- 死方法 `_summarize_audit_issues`（`phase_runner.py`）：AST 分析发现定义但从未调用，已移除
+
+---
+
 ## [0.5.0] - 2026-03-30
 
 ### Added

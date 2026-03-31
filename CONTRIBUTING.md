@@ -26,12 +26,18 @@ murder_wizard/
 │   ├── phase_runner.py # Stage execution logic
 │   └── wizard_tui.py  # Interactive init wizard
 ├── llm/               # LLM adapter layer
-│   └── client.py      # Claude / OpenAI adapters
+│   ├── client.py      # Claude / OpenAI adapters
+│   ├── cache.py       # LLM response cache (SHA256)
+│   └── rate_limit.py  # Concurrent rate limiter
+├── prompts/           # Prompt templates
+│   └── loader.py      # PromptLoader (loads all templates)
 ├── print/             # PDF generation
 │   └── pdf_gen.py     # reportlab-based PDF output
 └── wizard/            # Core wizard logic
     ├── session.py     # Session persistence
-    └── state_machine.py # Stage state machine
+    ├── state_machine.py # Stage state machine
+    ├── schemas.py      # Pydantic models (CharacterMatrix, TruthDelta)
+    └── truth_files.py  # JSON truth file manager
 ```
 
 ## Adding a New Stage
