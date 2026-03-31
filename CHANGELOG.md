@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.7.0] - 2026-04-01
+
+### Added
+
+#### 5 类剧本杀类型化工作流
+- 新增 5 种剧本杀类型支持：情感本、推理本、欢乐本、恐怖本、机制本
+- 每种类型独立的 Prompt 模板（30 个模板：5 类型 × 5 阶段 + 5 系统提示词）
+- `PromptLoader` 支持类型化系统提示词（`system_stage1_designer`、`system_stage2_writer` 等）
+- 质量门禁系统：每阶段自动验证输出质量
+- 类型化检查清单（`TYPE_CHECKLIST`）：情感弧线、证据链、社交碰撞、恐惧升级、阵营平衡
+
+#### PhaseRunner 增强
+- `run_stage_with_retry()`：质量门禁失败自动重试
+- `_validate_output()`：阶段输出验证（长度 + 关键词检查）
+- `run_pipeline()`：链式执行多个阶段
+- `get_quality_report()`：质量报告生成
+- 会话状态持久化：`story_type` 现在会保存到 session 文件
+
+### Fixed
+
+- `story_type` 现在正确持久化到 `murder-wizard-session.json`
+
+---
+
 ## [0.6.0] - 2026-03-31
 
 ### Added
