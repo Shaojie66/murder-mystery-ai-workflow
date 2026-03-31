@@ -261,7 +261,7 @@ class TruthFileManager:
 
             if field == "event_cognitions" and len(parts) >= 4:
                 eid = parts[3]
-                if op.op == "update" and op.op in ["add", "update"]:
+                if op.op in ["add", "update", "replace"]:
                     # Parse new value: "知: detail" format
                     if ":" in op.new_value:
                         state_str, detail = op.new_value.split(":", 1)
@@ -371,8 +371,8 @@ class TruthFileManager:
         chain_role: str,
         points_to: str = "",
     ) -> EvidenceItem:
-        """Add an evidence item to the current matrix."""
-        item = EvidenceItem(
+        """Create but do NOT persist an evidence item — use add_evidence_to_matrix to persist."""
+        return EvidenceItem(
             evidence_id=evidence_id,
             name=name,
             description=description,
@@ -381,7 +381,30 @@ class TruthFileManager:
             chain_role=chain_role,
             points_to=points_to,
         )
-        return item
+
+    def add_evidence_to_matrix(
+        self,
+        matrix: CharacterMatrix,
+        evidence_id: str,
+        name: str,
+        description: str,
+        source_event: str,
+        source_character: str,
+        chain_role: str,
+        points_to: str = "",
+    ) -> CharacterMatrix:
+        """Add an evidence item to the matrix and save it atomically."""
+        matrix.evidence[evidence_id] = EvidenceItem(
+            evidence_id=evidence_id,
+            name=name,
+            description=description,
+            source_event=source_event,
+            source_character=source_character,
+            chain_role=chain_role,
+            points_to=points_to,
+        )
+        self.save_matrix(matrix, author="human", note=f"Added evidence {evidence_id}")
+        return matrix
 
     # ─── Audit helpers ───────────────────────────────────────────────────────
 

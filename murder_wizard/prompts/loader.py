@@ -77,7 +77,7 @@ class PromptLoader:
             vars["matrix_table"] = "\n".join([header, sep] + rows)
         return vars
 
-    def render(self, filename: str, **variables) -> str:
+    def render(self, filename: str, json_only: bool = False, **variables) -> str:
         """渲染模板，将 {{variable}} 替换为对应值.
 
         示例：
@@ -85,9 +85,13 @@ class PromptLoader:
                           outline="xxx",
                           story_type="推理本",
                           is_prototype=True)
+
+        Args:
+            json_only: 如果为 True，只返回 JSON section，跳过 Markdown 部分。
         """
         template = self._load_raw(filename)
         vars = self._prepare_vars(variables)
+        vars["json_only"] = json_only
 
         def replacer(m):
             key = m.group(1).strip()
@@ -96,7 +100,21 @@ class PromptLoader:
                 return str(val) if val is not None else ""
             return m.group(0)  # 未找到变量保留原样
 
-        return re.sub(r"\{\{([^}]+)\}\}", replacer, template)
+        result = re.sub(r"\{\{([^}]+)\}\}", replacer, template)
+
+        # Handle conditional blocks: {{#if var}}...{{/if}} and {{#ifnot var}}...{{/ifnot}}
+        json_only = vars.get("json_only", False)
+
+        # {{#if json_only}}...{{/if}} — only if json_only is True
+        result = re.sub(r"\{\{#if\s+(\w+)\}\}(.*?)\{\{/if\}\}", 
+                        lambda m: m.group(2) if vars.get(m.group(1).strip(), False) else "", 
+                        result, flags=re.DOTALL)
+        # {{#ifnot json_only}}...{{/ifnot}} — only if json_only is False
+        result = re.sub(r"\{\{#ifnot\s+(\w+)\}\}(.*?)\{\{/ifnot\}\}",
+                        lambda m: m.group(2) if not vars.get(m.group(1).strip(), False) else "",
+                        result, flags=re.DOTALL)
+
+        return result
 
     # ──────────────────────────────────────────────────────────────────
     # Layer 0 — 创意问卷（init 向导）
@@ -144,7 +162,7 @@ class PromptLoader:
         请求 LLM 输出结构化 JSON 而非 Markdown 表格，
         以便后续用 Zod schema 校验和程序化处理。
         """
-        return self.render("02_script_generation.md", **variables)
+        return self.render("02_script_generation.md", json_only=True, **variables)
 
     def character_script_b(self, **variables) -> str:
         """Layer 2 Q4：b本（线索本）生成."""

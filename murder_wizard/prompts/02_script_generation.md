@@ -45,6 +45,34 @@
 ## 信息矩阵
 {{matrix_table}}
 
+{{#if json_only}}
+## 附加：结构化JSON输出（用于机器校验）
+
+请直接输出 JSON 格式，不要输出 Markdown：
+
+```json
+{
+  "char_count": {{char_count}},
+  "event_count": {{event_count}},
+  "is_prototype": {{is_prototype_bool}},
+  "characters": {
+    "R1": {
+      "name": "角色名",
+      "role": "社会身份",
+      "public_relationship": "对其他角色的公开关系",
+      "event_cognitions": {
+        "E1": { "state": "知|疑|昧|否|误信|隐瞒", "detail": "说明" },
+        "E2": { "state": "知|疑|昧|否|误信|隐瞒", "detail": "说明" }
+      }
+    }
+  },
+  "evidence": {
+    "EV-A": { "name": "证据名", "source_event": "E1", "source_character": "R1", "chain_role": "指向R1", "points_to": "R1" }
+  }
+}
+```
+{{/if}}
+{{#ifnot json_only}}
 ## 附加：证据链设计
 列出3个**关键证据**：
 - 证据A：从哪来（哪个角色/哪个事件），谁可以接触
@@ -80,7 +108,8 @@ JSON 用于后续 Zod schema 校验和程序化处理：
 ```
 
 请确保 JSON 部分的 `state` 字段只使用：`知`、`疑`、`昧`、`否`、`误信`、`隐瞒` 六个值之一。
-```
+{{/ifnot}}
+
 
 ---
 

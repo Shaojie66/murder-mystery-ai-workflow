@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.6.0] - 2026-03-31
+
+### Added
+
+#### JSON Truth File 系统
+- `TruthFileManager`（`murder_wizard/wizard/truth_files.py`）：JSON 真相文件管理器
+  - Pydantic 验证 + 每次写入自动备份（immutable history）
+  - Delta 生成（增量更新，避免 context window bloat）
+  - Markdown 迁移（从 `information_matrix.md` 迁移到 JSON）
+  - 审计 helpers（角色认知完整性、凶手知识充足性）
+- `schemas.py`（`murder_wizard/wizard/schemas.py`）：Pydantic 模型
+  - `CharacterMatrix`：角色×事件信息矩阵
+  - `TruthDelta`：增量更新格式（add/update/delete/replace）
+  - `GameState`、`PendingHooksFile`、`ChapterSummariesFile` 等
+
+#### Reviser 自动修复循环
+- `run_audit()` 重构：Auditor → Reviser → Re-audit 循环（最多3轮）
+- 每轮运行三轮审计：信息矩阵 / 机制一致性 / 结局合理性
+- 发现 P0 问题 → Reviser 自动修复 → 重新审计
+- `05_reviser.md`：Reviser prompt 模板
+- `02_script_generation.md`：新增结构化 JSON 输出说明
+
+#### Design Context
+- `.impeccable.md`：设计决策文档（用户、Brand Personality、Aesthetic Direction、Design Principles）
+- `CLAUDE.md` 新增 Design Context 小节
+
+#### 测试
+- `tests/test_truth_files.py`：13 个测试（TruthFileManager、CharacterMatrix、Delta、Reviser helpers）
+
+---
+
 ## [0.5.0] - 2026-03-30
 
 ### Added

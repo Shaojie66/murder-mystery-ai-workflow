@@ -295,33 +295,46 @@ class PhaseRunner:
         """从 LLM 响应中提取 JSON 代码块。
 
         支持两种格式：
-        1. ```json ... ``` 代码块
-        2. 行内 JSON（以 { 开头，以 } 结尾）
+        1. ```json ... ``` 代码块（最可靠）
+        2. 行内 JSON — 通过括号计数找到最外层 { }
 
         Returns parsed dict or None if no valid JSON found.
         """
         import re
+        import json as _json
 
-        # Try ```json ... ``` block first
-        match = re.search(r"```json\s*({\s*.*?})\s*```", content, re.DOTALL)
-        if match:
+        # Strategy 1: ```json ... ``` code fence (most reliable)
+        for match in re.finditer(r"```json\s*(\S[\s\S]*?)\s*```", content):
+            candidate = match.group(1).strip()
             try:
-                import json as _json
-                return _json.loads(match.group(1))
+                data = _json.loads(candidate)
+                if isinstance(data, dict) and "characters" in data:
+                    return data
             except Exception:
                 pass
 
-        # Try to find any JSON object
-        match = re.search(r"\{[^{}]*\}", content, re.DOTALL)
-        if match:
-            # Check if it looks like our schema
-            candidate = match.group(0)
-            if '"characters"' in candidate and '"event_cognitions"' in candidate:
-                try:
-                    import json as _json
-                    return _json.loads(candidate)
-                except Exception:
-                    pass
+        # Strategy 2: Find outermost { } via brace counting for inline JSON
+        in_json = False
+        brace_depth = 0
+        json_start = json_end = None
+        for i, ch in enumerate(content):
+            if ch == '{' and not in_json:
+                in_json = True
+                json_start = i
+                brace_depth = 1
+            elif ch == '{' and in_json:
+                brace_depth += 1
+            elif ch == '}' and in_json:
+                brace_depth -= 1
+                if brace_depth == 0:
+                    json_end = i + 1
+                    candidate = content[json_start:json_end]
+                    if '"characters"' in candidate and '"event_cognitions"' in candidate:
+                        try:
+                            return _json.loads(candidate)
+                        except Exception:
+                            pass
+                    in_json = False
 
         return None
 
@@ -1008,32 +1021,31 @@ Phase 1 扩写内容：
             return None
 
     def _count_p0_issues(self, content: str) -> int:
-        """从审计结果中统计 P0 问题数量。"""
+        """从审计结果中统计 P0 问题数量。
+
+        Catches: P0:3, P0：3, P0（3个）, P0问题3个, 3个P0, P0-3, P0 x 3, 发现3个P0
+        """
         import re
-        # Match patterns like "P0:3" or "P0：3" or "P0（3个）"
-        matches = re.findall(r"p0[：:]\s*(\d+)", content, re.IGNORECASE)
-        if matches:
-            return sum(int(m) for m in matches)
-        # Fallback: count lines containing P0 issues
+        # Primary: explicit count patterns
+        patterns = [
+            r"p0[：: ]+(\d+)",           # P0: 3, P0：5, P0 3
+            r"p0[（(](\d+)[)）]",        # P0（3）, P0(3)
+            r"p0[问题个件]+[：: ]*(\d+)", # P0问题3个, P0个3
+            r"[发现共](\d+)个?p0",        # 发现3个P0, 共3个P0
+            r"p0[-x×](\d+)",             # P0-3, P0x3
+        ]
+        total = 0
+        for pat in patterns:
+            matches = re.findall(pat, content, re.IGNORECASE)
+            total += sum(int(m) for m in matches)
+        if total > 0:
+            return total
+        # Fallback: count standalone P0 markers
         return content.count("[P0]") + content.count("**P0**") + content.count("P0\n")
 
     def _count_all_p0_issues(self, r1: str, r2: str, r3: str) -> int:
         """统计三轮审计的 P0 总数。"""
         return self._count_p0_issues(r1) + self._count_p0_issues(r2) + self._count_p0_issues(r3)
-
-    def _summarize_audit_issues(self, r1: LLMResponse, r2: LLMResponse, r3: LLMResponse) -> int:
-        """从三个审计结果中统计问题数量"""
-        total = 0
-        for response in [r1, r2, r3]:
-            content = response.content.lower()
-            # 简单统计 P1/P2/P3 出现次数
-            for _ in range(content.count("p1")):
-                total += 1
-            for _ in range(content.count("p2")):
-                total += 1
-            for _ in range(content.count("p3")):
-                total += 1
-        return total
 
     def _show_cost_warning(self, cost: float):
         """显示成本警告"""
