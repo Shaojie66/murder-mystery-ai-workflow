@@ -101,6 +101,85 @@ class ClaudeAdapter(LLMAdapter):
         return 0.000015  # Claude 3.5 Sonnet 平均成本
 
 
+class MiniMaxAdapter(LLMAdapter):
+    """MiniMax 适配器 - 使用 Anthropic SDK 格式"""
+
+    def __init__(self, api_key: Optional[str] = None):
+        try:
+            from anthropic import Anthropic
+        except ImportError:
+            raise ImportError("anthropic package not installed. Run: pip install anthropic")
+
+        base_url = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic")
+        api_key = api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")
+
+        self.client = Anthropic(
+            api_key=api_key,
+            base_url=base_url,
+        )
+        self.model = os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
+
+    def complete(self, prompt: str, system: str = "") -> LLMResponse:
+        import anthropic
+        max_retries = 3
+        base_delay = 2
+
+        for attempt in range(max_retries):
+            try:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    system=system,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                # MiniMax may return thinking blocks before text blocks
+                content = ""
+                for block in response.content:
+                    if block.type == "text":
+                        content = block.text
+                        break
+                input_tokens = response.usage.input_tokens
+                output_tokens = response.usage.output_tokens
+                total_tokens = input_tokens + output_tokens
+
+                # MiniMax pricing - use estimate similar to Claude
+                cost = (input_tokens / 1_000_000) * 3 + (output_tokens / 1_000_000) * 15
+
+                return LLMResponse(
+                    content=content,
+                    tokens_used=total_tokens,
+                    cost=cost,
+                    model=self.model
+                )
+            except anthropic.RateLimitError:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    time.sleep(delay)
+                else:
+                    raise
+            except Exception as e:
+                raise
+
+    def complete_streaming(self, prompt: str, system: str = "") -> Iterator[str]:
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=4096,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True
+        )
+        for event in response:
+            if event.type == "content_block_delta":
+                # Skip thinking blocks (MiniMax)
+                if hasattr(event.delta, 'type') and event.delta.type == 'thinking_delta':
+                    continue
+                if event.delta.text:
+                    yield event.delta.text
+
+    def cost_per_token(self) -> float:
+        return 0.000015  # MiniMax estimate
+
+
 class OpenAIAdapter(LLMAdapter):
     """OpenAI GPT 适配器"""
 
@@ -184,6 +263,7 @@ class OllamaAdapter(LLMAdapter):
         base_url: str = "http://localhost:11434/v1",
         model: str = "llama3",
         api_key: Optional[str] = None,
+        extra_headers: Optional[dict] = None,
     ):
         try:
             from openai import OpenAI
@@ -216,9 +296,11 @@ class OllamaAdapter(LLMAdapter):
 
         self.base_url = base_url
         self.model = model
+        self.extra_headers = extra_headers or {}
         self.client = OpenAI(
             api_key=api_key or os.environ.get("OLLAMA_API_KEY") or "ollama",
             base_url=base_url,
+            http_headers=self.extra_headers,
         )
 
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
@@ -294,7 +376,7 @@ def create_llm_adapter(provider: str = "claude") -> LLMAdapter:
     """工厂函数：创建 LLM 适配器
 
     Args:
-        provider: "claude" / "openai" / "ollama"
+        provider: "claude" / "openai" / "ollama" / "minimax"
     """
     if provider == "claude":
         return ClaudeAdapter()
@@ -304,5 +386,7 @@ def create_llm_adapter(provider: str = "claude") -> LLMAdapter:
         base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         model = os.environ.get("OLLAMA_MODEL", "llama3")
         return OllamaAdapter(base_url=base_url, model=model)
+    elif provider == "minimax":
+        return MiniMaxAdapter()
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
