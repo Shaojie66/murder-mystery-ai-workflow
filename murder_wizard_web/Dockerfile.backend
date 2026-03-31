@@ -1,0 +1,29 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy backend requirements
+COPY murder_wizard_web/backend/requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy murder_wizard package (the actual source)
+COPY murder_wizard/ ./murder_wizard/
+COPY murder_wizard_web/backend/murder_wizard/ ./murder_wizard_web/backend/murder_wizard/
+COPY murder_wizard_web/backend/main.py ./murder_wizard_web/backend/
+
+# Set Python path
+ENV PYTHONPATH=/app/murder_wizard_web/backend
+
+WORKDIR /app/murder_wizard_web/backend
+
+EXPOSE 8000
+
+# Run with uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

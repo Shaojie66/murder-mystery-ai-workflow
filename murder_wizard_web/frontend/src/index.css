@@ -1,0 +1,237 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Crimson+Pro:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: #12110F;
+  --bg-raised: #1C1917;
+  --bg-elevated: #292524;
+  --border: #3D3532;
+  --border-subtle: #262019;
+  --text-cream: #F5F0E8;
+  --text-muted: #8A8078;
+  --text-faint: #6B6460;
+  --accent-crimson: #9B1C1C;
+  --accent-crimson-hover: #7F1717;
+  --accent-gold: #C77A08;
+  --accent-gold-muted: #92400E;
+  --accent-gold-subtle: rgba(180, 83, 9, 0.15);
+  --cream-subtle: rgba(245, 240, 232, 0.06);
+  /* Semantic output colors */
+  --output-token: #D4C9BC;
+  --output-error: #F87171;
+  --output-success: #86EFAC;
+  --output-error-bg: rgba(239, 68, 68, 0.12);
+  --output-error-border: rgba(239, 68, 68, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-cream);
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-size: 17px;
+  line-height: 1.65;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Selection */
+::selection {
+  background: var(--accent-crimson);
+  color: var(--text-cream);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* Typography */
+h1, h2, h3, h4 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-cream);
+  line-height: 1.2;
+}
+
+/* Thin ruled divider */
+.rule {
+  border: none;
+  border-top: 1px solid var(--border);
+}
+.rule-subtle {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Crimson label — small caps style */
+.label {
+  font-family: 'Crimson Pro', serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Accent rule */
+.accent-rule {
+  display: inline-block;
+  width: 2rem;
+  height: 2px;
+  background: var(--accent-crimson);
+  vertical-align: middle;
+  margin-right: 0.75rem;
+}
+
+/* Ghost button */
+.btn-ghost {
+  padding: 0.5rem 1rem;
+  font-size: 13px;
+  font-family: 'Crimson Pro', serif;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  transition: all 150ms;
+}
+.btn-ghost:hover {
+  color: var(--text-cream);
+  border-color: var(--text-faint);
+  background: var(--cream-subtle);
+}
+
+/* Primary button */
+.btn-primary {
+  padding: 0.625rem 1.25rem;
+  font-size: 13px;
+  font-family: 'Crimson Pro', serif;
+  letter-spacing: 0.03em;
+  font-weight: 500;
+  color: var(--text-cream);
+  background: var(--accent-crimson);
+  border: 1px solid var(--accent-crimson);
+  cursor: pointer;
+  transition: all 150ms;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-primary:hover {
+  background: var(--accent-crimson-hover);
+  border-color: var(--accent-crimson-hover);
+}
+
+/* Secondary button */
+.btn-secondary {
+  padding: 0.5rem 1rem;
+  font-size: 13px;
+  font-family: 'Crimson Pro', serif;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  color: var(--accent-gold);
+  border: 1px solid var(--accent-gold-muted);
+  background: var(--accent-gold-subtle);
+  cursor: pointer;
+  transition: all 150ms;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.btn-secondary:hover {
+  background: rgba(180, 83, 9, 0.25);
+}
+
+/* Form inputs */
+input, select, textarea {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-cream);
+  font-family: 'Crimson Pro', serif;
+  font-size: 16px;
+  padding: 0.625rem 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+  border-radius: 2px;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-gold);
+}
+input::placeholder, textarea::placeholder {
+  color: var(--text-faint);
+}
+
+/* Streaming output */
+
+/* Matrix cells */
+.matrix-cell {
+  @apply px-2 py-1 text-xs text-center cursor-pointer transition-colors;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.05em;
+}
+.matrix-cell:hover { outline: 1px solid var(--accent-gold); }
+
+/* Focus visible */
+:focus-visible {
+  outline: 1px solid var(--accent-gold);
+  outline-offset: 2px;
+}
+
+/* Blink cursor — respects prefers-reduced-motion */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .blink-cursor { animation: none !important; }
+}
+
+/* Links */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Sidebar responsive — collapses on narrow viewports */
+@media (max-width: 768px) {
+  :root { --sidebar-width: 0px; }
+  .sidebar-drawer { display: flex; }
+  .sidebar-overlay { display: block; }
+}
+@media (min-width: 769px) {
+  .sidebar-drawer { display: none; }
+  .sidebar-overlay { display: none; }
+}
+
+/* ProjectView two-column → single column on tablet */
+@media (max-width: 900px) {
+  .project-columns {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Delete button hover reveal */
+input[type="checkbox"] {
+  accent-color: var(--accent-crimson);
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  cursor: pointer;
+}
