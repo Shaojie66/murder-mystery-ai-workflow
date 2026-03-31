@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "murder-wizard"
+version = "0.6.0"
+description = "CLI wizard for 剧本杀 creation workflow"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Shaojie Chen", email = "chenshaojie@example.com"}
+]
+keywords = ["murder-mystery", "剧本杀", "cli", "llm", "ai", "game-design"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment :: Multiuser Dungeons (MUD)",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "anthropic>=0.18.0",
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "reportlab>=4.0.0",
+]
+
+[project.scripts]
+murder-wizard = "murder_wizard.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Shaojie66/murder-mystery-ai-workflow"
+Documentation = "https://github.com/Shaojie66/murder-mystery-ai-workflow#readme"
+Repository = "https://github.com/Shaojie66/murder-mystery-ai-workflow"
+Issues = "https://github.com/Shaojie66/murder-mystery-ai-workflow/issues"
+Changelog = "https://github.com/Shaojie66/murder-mystery-ai-workflow/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["murder_wizard*"]
+
+[tool.setuptools.package-data]
+murder_wizard = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

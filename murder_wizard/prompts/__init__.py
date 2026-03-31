@@ -1,5 +1,1 @@
-"""Prompt templates package."""
-
-from .loader import PromptLoader
-
-__all__ = ["PromptLoader"]
+"""murder_wizard.prompts — 内置 prompt 模板"""

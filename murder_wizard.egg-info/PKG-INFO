@@ -1,3 +1,37 @@
+Metadata-Version: 2.4
+Name: murder-wizard
+Version: 0.1.0
+Summary: CLI wizard for 剧本杀 creation workflow
+Author-email: Shaojie Chen <chenshaojie@example.com>
+License: MIT
+Project-URL: Homepage, https://github.com/Shaojie66/murder-mystery-ai-workflow
+Project-URL: Documentation, https://github.com/Shaojie66/murder-mystery-ai-workflow#readme
+Project-URL: Repository, https://github.com/Shaojie66/murder-mystery-ai-workflow
+Project-URL: Issues, https://github.com/Shaojie66/murder-mystery-ai-workflow/issues
+Project-URL: Changelog, https://github.com/Shaojie66/murder-mystery-ai-workflow/blob/main/CHANGELOG.md
+Keywords: murder-mystery,剧本杀,cli,llm,ai,game-design
+Classifier: Development Status :: 3 - Alpha
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Games/Entertainment :: Multiuser Dungeons (MUD)
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: click>=8.1.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: anthropic>=0.18.0
+Requires-Dist: openai>=1.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: reportlab>=4.0.0
+Dynamic: license-file
+
 # murder-wizard
 
 > 一个人 + AI，从灵感到商业化发布的剧本杀创作 CLI 工具。
@@ -77,8 +111,6 @@ murder-wizard status myproject
 | `murder-wizard phase <name> <n>` | 运行阶段 1-8 |
 | `murder-wizard expand <name>` | 原型扩写为完整版 |
 | `murder-wizard resume <name>` | 从中断处继续 |
-| `murder-wizard audit <name>` | 完整穿帮审计（上线前必做） |
-| `murder-wizard cache <name>` | 查看/清空 LLM 缓存 |
 
 ## 原型模式
 
@@ -98,7 +130,7 @@ murder-wizard init myproject --full --type mechanic
 ~/.murder-wizard/projects/<name>/
 ├── outline.md              # 大纲
 ├── mechanism.md           # 机制设计
-├── information_matrix.md   # 信息矩阵（Markdown）
+├── information_matrix.md   # 信息矩阵
 ├── characters.md          # 角色剧本
 ├── image-prompts.md       # 图像提示词
 ├── test_guide.md         # 测试指南
@@ -109,11 +141,7 @@ murder-wizard init myproject --full --type mechanic
 │   ├── 角色图/
 │   ├── 海报/
 │   └── 卡牌/
-├── state/                # JSON 真相文件（v0.6.0+）
-│   ├── character_matrix.json  # 角色×事件信息矩阵
-│   └── .backups/         # 自动备份（immutable）
-├── cost.log             # API 消耗日志
-└── audit_report.md      # 完整穿帮审计报告
+└── cost.log             # API 消耗日志
 ```
 
 ## 配置
