@@ -134,6 +134,18 @@ class PromptLoader:
         """Layer 2 Q3：a本（阅读本）生成."""
         return self.render("02_script_generation.md", **variables)
 
+    # ──────────────────────────────────────────────────────────────────
+    # JSON Truth File generation（inkos-style structured output）
+    # ──────────────────────────────────────────────────────────────────
+
+    def information_matrix_json(self, **variables) -> str:
+        """Layer 2 Q1：信息矩阵生成 — JSON 格式输出.
+
+        请求 LLM 输出结构化 JSON 而非 Markdown 表格，
+        以便后续用 Zod schema 校验和程序化处理。
+        """
+        return self.render("02_script_generation.md", **variables)
+
     def character_script_b(self, **variables) -> str:
         """Layer 2 Q4：b本（线索本）生成."""
         return self.render("02_script_generation.md", **variables)
@@ -173,6 +185,10 @@ class PromptLoader:
     def consistency_synthesis(self, **variables) -> str:
         """Layer 3 综合：三轮汇总评估."""
         return self.render("04_consistency_check.md", **variables)
+
+    def consistency_reviser(self, **variables) -> str:
+        """Layer 3 修正：Reviser 自动修复 P0/P1 问题."""
+        return self.render("05_reviser.md", **variables)
 
     # ──────────────────────────────────────────────────────────────────
     # 便捷系统 prompt

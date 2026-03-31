@@ -52,6 +52,34 @@
 - 证据C：最终如何指向凶手（逻辑链）
 
 格式：Markdown表格 + 证据链说明
+
+## 附加：结构化JSON输出（用于机器校验）
+请在 Markdown 输出之后，再输出一份纯 JSON 格式的信息矩阵。
+JSON 用于后续 Zod schema 校验和程序化处理：
+
+```json
+{
+  "char_count": {{char_count}},
+  "event_count": {{event_count}},
+  "is_prototype": {{is_prototype_bool}},
+  "characters": {
+    "R1": {
+      "name": "角色名",
+      "role": "社会身份",
+      "public_relationship": "对其他角色的公开关系",
+      "event_cognitions": {
+        "E1": { "state": "知|疑|昧|否|误信|隐瞒", "detail": "说明" },
+        "E2": { "state": "知|疑|昧|否|误信|隐瞒", "detail": "说明" }
+      }
+    }
+  },
+  "evidence": {
+    "EV-A": { "name": "证据名", "source_event": "E1", "source_character": "R1", "chain_role": "指向R1", "points_to": "R1" }
+  }
+}
+```
+
+请确保 JSON 部分的 `state` 字段只使用：`知`、`疑`、`昧`、`否`、`误信`、`隐瞒` 六个值之一。
 ```
 
 ---
