@@ -300,7 +300,7 @@ class OllamaAdapter(LLMAdapter):
         self.client = OpenAI(
             api_key=api_key or os.environ.get("OLLAMA_API_KEY") or "ollama",
             base_url=base_url,
-            http_headers=self.extra_headers,
+            default_headers=self.extra_headers,
         )
 
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
