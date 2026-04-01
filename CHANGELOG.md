@@ -64,6 +64,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `README.md`：新增 Web 版说明、落地页路由、Pro版本对比表、环境变量说明
 - `CLAUDE.md`：新增 murder_wizard_web 目录结构、Web 路由表、Design Tokens
 
+#### ProjectView 重新设计
+- 选用 **Publication Classic** 设计方向：暖米色背景（#F8F4EE）、Playfair Display 大号衬线标题、克制优雅的出版风格
+- 阶段条改为图标式（✓/→/·），去除网格线
+- 产物列表改为简洁的列表行，文件图标 § 替换 emoji
+- 快捷操作面板精简，expand 卡片使用金色边框+淡金色背景
+
 ### Fixed
 
 - `story_type` 现在正确持久化到 `murder-wizard-session.json`

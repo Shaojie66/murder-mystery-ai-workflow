@@ -6,6 +6,20 @@ import { useProjectStore } from '../stores/projectStore'
 import type { ProjectDetails } from '../types/api'
 import VisualGallery from '../components/visual/VisualGallery'
 
+// B1 Publication Classic — warm cream palette
+const B1 = {
+  bgPage: '#F8F4EE',
+  bgRaised: '#FFFFFF',
+  bgSection: '#F0EBE3',
+  border: '#E5DDD3',
+  textPrimary: '#1C1917',
+  textMuted: '#78716C',
+  textFaint: '#A8A29E',
+  crimson: '#9B1C1C',
+  gold: '#C77A08',
+  goldSubtle: 'rgba(199,122,8,0.08)',
+}
+
 const STAGE_LABELS: Record<string, { label: string; next: number | null }> = {
   idle: { label: '未开始', next: 1 },
   stage_1_mechanism: { label: '机制设计', next: 2 },
@@ -44,8 +58,8 @@ export default function ProjectView() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <span style={{ color: 'var(--text-faint)', fontFamily: "'Crimson Pro', serif", fontStyle: 'italic' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: B1.bgPage }}>
+        <span style={{ color: B1.textFaint, fontFamily: "'Crimson Pro', serif", fontStyle: 'italic', fontSize: '15px' }}>
           加载中...
         </span>
       </div>
@@ -54,13 +68,13 @@ export default function ProjectView() {
 
   if (error || !project) {
     return (
-      <div style={{ padding: '3rem', maxWidth: '640px', margin: '0 auto' }}>
+      <div style={{ padding: '3rem', maxWidth: '640px', margin: '0 auto', background: B1.bgPage, minHeight: '100vh' }}>
         <div
           style={{
             padding: '1.5rem',
-            border: '1px solid var(--output-error-border)',
-            background: 'var(--output-error-bg)',
-            color: 'var(--output-error)',
+            border: `1px solid ${B1.border}`,
+            background: B1.bgRaised,
+            color: B1.crimson,
             fontFamily: "'Crimson Pro', serif",
           }}
         >
@@ -78,13 +92,13 @@ export default function ProjectView() {
   const currentPhaseNum = stageMatch ? parseInt(stageMatch[1]) : 0
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
-      {/* Page header */}
+    <div style={{ minHeight: '100vh', background: B1.bgPage }}>
+      {/* Page header — B1 Publication Classic */}
       <header
         style={{
-          padding: '3rem 3rem 2rem',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--bg-base)',
+          padding: '2.5rem 3rem 2rem',
+          borderBottom: `1px solid ${B1.border}`,
+          background: B1.bgPage,
         }}
       >
         <div style={{ maxWidth: '900px', margin: '0 auto' }}>
@@ -94,33 +108,45 @@ export default function ProjectView() {
               display: 'flex',
               alignItems: 'center',
               gap: '0.5rem',
-              marginBottom: '1.5rem',
+              marginBottom: '1.75rem',
               fontFamily: "'Crimson Pro', serif",
-              fontSize: '13px',
-              color: 'var(--text-faint)',
+              fontSize: '12px',
+              color: B1.textFaint,
+              letterSpacing: '0.03em',
             }}
           >
-            <Link to="/" style={{ color: 'var(--text-faint)', textDecoration: 'none' }}>
+            <Link to="/" style={{ color: B1.textFaint, textDecoration: 'none' }}>
               项目列表
             </Link>
-            <span>→</span>
-            <span style={{ color: 'var(--text-muted)' }}>{project.name}</span>
+            <span style={{ color: B1.textFaint }}>→</span>
+            <span style={{ color: B1.textMuted }}>{project.name}</span>
           </div>
 
           {/* Title block */}
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '2rem' }}>
             <div style={{ flex: 1 }}>
-              <div className="label" style={{ marginBottom: '0.75rem', color: 'var(--accent-crimson)' }}>
-                <span className="accent-rule" style={{ background: 'var(--accent-crimson)' }} />
+              {/* Story type badge */}
+              <div
+                style={{
+                  fontFamily: "'Crimson Pro', serif",
+                  fontSize: '12px',
+                  color: B1.crimson,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  marginBottom: '0.75rem',
+                  fontWeight: 500,
+                }}
+              >
                 {project.story_type} · {project.is_prototype ? '原型模式' : '完整模式'}
               </div>
+
               <h1
                 style={{
                   fontFamily: "'Playfair Display', serif",
-                  fontSize: 'clamp(2rem, 4vw, 3rem)',
+                  fontSize: 'clamp(2.2rem, 4vw, 3rem)',
                   fontWeight: 500,
-                  color: 'var(--text-cream)',
-                  letterSpacing: '-0.02em',
+                  color: B1.textPrimary,
+                  letterSpacing: '-0.03em',
                   lineHeight: 1.1,
                   marginBottom: '0.5rem',
                 }}
@@ -130,9 +156,10 @@ export default function ProjectView() {
               <p
                 style={{
                   fontFamily: "'Crimson Pro', serif",
-                  fontSize: '16px',
-                  color: 'var(--text-muted)',
+                  fontSize: '15px',
+                  color: B1.textMuted,
                   fontStyle: 'italic',
+                  marginBottom: '0',
                 }}
               >
                 当前阶段：{stageInfo.label}
@@ -142,8 +169,22 @@ export default function ProjectView() {
             {nextStage && (
               <Link
                 to={`/projects/${encodeURIComponent(project.name)}/phase/${nextStage}`}
-                className="btn-primary"
-                style={{ flexShrink: 0, marginTop: '0.5rem' }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.5rem 1rem',
+                  background: B1.crimson,
+                  color: '#F5F0E8',
+                  fontFamily: "'Crimson Pro', serif",
+                  fontSize: '13px',
+                  textDecoration: 'none',
+                  flexShrink: 0,
+                  marginTop: '0.25rem',
+                  transition: 'background 150ms',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#7F1717')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = B1.crimson)}
               >
                 ▶ {PHASE_LABELS[nextStage]}
               </Link>
@@ -152,20 +193,30 @@ export default function ProjectView() {
         </div>
       </header>
 
-      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '3rem' }}>
-        {/* 8-Phase progress — editorial timeline */}
+      <div style={{ maxWidth: '900px', margin: '0 auto', padding: '2.5rem 3rem' }}>
+        {/* 8-Phase progress — B1 editorial timeline */}
         <section style={{ marginBottom: '3rem' }}>
-          <div className="label" style={{ marginBottom: '1.5rem', color: 'var(--text-faint)' }}>
+          {/* Section label */}
+          <div
+            style={{
+              fontFamily: "'Crimson Pro', serif",
+              fontSize: '11px',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: B1.textFaint,
+              marginBottom: '1rem',
+            }}
+          >
             创作进度
           </div>
 
+          {/* Phase bar — B1: icon-based, equal segments, no grid lines */}
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
-              gap: '1px',
-              background: 'var(--border-subtle)',
-              border: '1px solid var(--border-subtle)',
+              display: 'flex',
+              gap: 0,
+              border: `1px solid ${B1.border}`,
+              background: B1.bgRaised,
             }}
           >
             {PHASE_LABELS.slice(1).map((label, i) => {
@@ -177,68 +228,48 @@ export default function ProjectView() {
                 <div
                   key={phaseNum}
                   style={{
-                    padding: '1rem 0.75rem',
-                    background: isDone
-                      ? 'rgba(155,28,28,0.08)'
-                      : isCurrent
-                      ? 'rgba(180,83,9,0.1)'
-                      : 'var(--bg-raised)',
+                    flex: 1,
+                    padding: '0.6rem 0.5rem',
                     textAlign: 'center',
-                    position: 'relative',
+                    borderRight: phaseNum < 8 ? `1px solid ${B1.border}` : 'none',
+                    background: isDone
+                      ? 'rgba(155,28,28,0.07)'
+                      : isCurrent
+                      ? 'rgba(199,122,8,0.09)'
+                      : B1.bgRaised,
                   }}
                 >
+                  {/* Phase icon */}
                   <div
                     style={{
                       fontFamily: "'Playfair Display', serif",
-                      fontSize: '11px',
+                      fontSize: '13px',
                       color: isDone
-                        ? 'var(--accent-crimson)'
+                        ? B1.crimson
                         : isCurrent
-                        ? 'var(--accent-gold)'
-                        : 'var(--text-faint)',
-                      marginBottom: '0.25rem',
-                      fontWeight: isCurrent ? 600 : 400,
+                        ? B1.gold
+                        : B1.border,
+                      marginBottom: '2px',
                     }}
                   >
                     {isDone ? '✓' : isCurrent ? '→' : '·'}
                   </div>
+                  {/* Phase label */}
                   <div
                     style={{
                       fontFamily: "'Crimson Pro', serif",
-                      fontSize: '12px',
+                      fontSize: '11px',
                       color: isDone
-                        ? 'var(--accent-crimson)'
+                        ? B1.crimson
                         : isCurrent
-                        ? 'var(--text-cream)'
-                        : 'var(--text-faint)',
+                        ? B1.textPrimary
+                        : B1.textFaint,
                       letterSpacing: '-0.01em',
                       lineHeight: 1.2,
                     }}
                   >
                     {label}
                   </div>
-                  <div
-                    style={{
-                      fontFamily: "'Crimson Pro', serif",
-                      fontSize: '10px',
-                      color: 'var(--text-faint)',
-                      marginTop: '2px',
-                    }}
-                  >
-                    阶段{phaseNum}
-                  </div>
-                  {isCurrent && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        height: '2px',
-                        background: 'var(--accent-gold)',
-                      }}
-                    />
-                  )}
                 </div>
               )
             })}
@@ -247,32 +278,41 @@ export default function ProjectView() {
 
         {/* Two-column: artifacts + quick actions */}
         <div
-          className="project-columns"
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 280px',
-            gap: '3rem',
+            gridTemplateColumns: '1fr 220px',
+            gap: '2rem',
             alignItems: 'start',
           }}
         >
           {/* Artifact files */}
           <section>
-            <div className="label" style={{ marginBottom: '1rem', color: 'var(--text-faint)' }}>
+            {/* Section label */}
+            <div
+              style={{
+                fontFamily: "'Crimson Pro', serif",
+                fontSize: '11px',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: B1.textFaint,
+                marginBottom: '0.75rem',
+              }}
+            >
               产物文件
             </div>
 
             <div
               style={{
-                border: '1px solid var(--border)',
-                background: 'var(--bg-raised)',
+                border: `1px solid ${B1.border}`,
+                background: B1.bgRaised,
               }}
             >
               {Object.entries(project.artifacts).map(([fname, info], idx) => (
                 <div
                   key={fname}
                   style={{
-                    padding: '0.875rem 1rem',
-                    borderBottom: idx < Object.keys(project.artifacts).length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                    padding: '0.65rem 0.875rem',
+                    borderBottom: idx < Object.keys(project.artifacts).length - 1 ? `1px solid ${B1.border}` : 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -283,8 +323,8 @@ export default function ProjectView() {
                     <span
                       style={{
                         fontFamily: "'Crimson Pro', serif",
-                        fontSize: '13px',
-                        color: info.exists ? 'var(--text-muted)' : 'var(--text-faint)',
+                        fontSize: '14px',
+                        color: info.exists ? B1.textMuted : B1.textFaint,
                         flexShrink: 0,
                       }}
                     >
@@ -293,8 +333,8 @@ export default function ProjectView() {
                     <span
                       style={{
                         fontFamily: "'Crimson Pro', serif",
-                        fontSize: '15px',
-                        color: info.exists ? 'var(--text-cream)' : 'var(--text-faint)',
+                        fontSize: '14px',
+                        color: info.exists ? B1.textPrimary : B1.textFaint,
                         textDecoration: info.exists ? 'none' : 'line-through',
                       }}
                     >
@@ -306,8 +346,8 @@ export default function ProjectView() {
                       <span
                         style={{
                           fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: '11px',
-                          color: 'var(--text-faint)',
+                          fontSize: '10px',
+                          color: B1.textFaint,
                         }}
                       >
                         {(info.size / 1024).toFixed(1)} KB
@@ -319,14 +359,14 @@ export default function ProjectView() {
                         style={{
                           fontFamily: "'Crimson Pro', serif",
                           fontSize: '12px',
-                          color: 'var(--accent-gold)',
+                          color: B1.gold,
                           textDecoration: 'none',
                         }}
                       >
                         查看 →
                       </Link>
                     ) : (
-                      <span style={{ fontFamily: "'Crimson Pro', serif", fontSize: '12px', color: 'var(--text-faint)' }}>
+                      <span style={{ fontFamily: "'Crimson Pro', serif", fontSize: '12px', color: B1.textFaint }}>
                         未生成
                       </span>
                     )}
@@ -338,11 +378,21 @@ export default function ProjectView() {
 
           {/* Quick actions */}
           <section>
-            <div className="label" style={{ marginBottom: '1rem', color: 'var(--text-faint)' }}>
+            {/* Section label */}
+            <div
+              style={{
+                fontFamily: "'Crimson Pro', serif",
+                fontSize: '11px',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: B1.textFaint,
+                marginBottom: '0.75rem',
+              }}
+            >
               快捷操作
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {[
                 { to: `/projects/${encodeURIComponent(project.name)}/matrix`, label: '信息矩阵', icon: '□' },
                 { to: `/projects/${encodeURIComponent(project.name)}/audit`, label: '穿帮审计', icon: '◻' },
@@ -355,32 +405,33 @@ export default function ProjectView() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.75rem',
-                    padding: '0.875rem 1rem',
-                    background: 'var(--bg-raised)',
-                    border: '1px solid var(--border)',
+                    gap: '0.625rem',
+                    padding: '0.65rem 0.875rem',
+                    background: B1.bgRaised,
+                    border: `1px solid ${B1.border}`,
                     textDecoration: 'none',
                     transition: 'all 150ms',
-                    color: 'var(--text-muted)',
+                    color: B1.textMuted,
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--accent-gold-muted)'
-                    e.currentTarget.style.color = 'var(--text-cream)'
-                    e.currentTarget.style.paddingLeft = '1.25rem'
+                    e.currentTarget.style.borderColor = B1.gold
+                    e.currentTarget.style.color = B1.textPrimary
+                    e.currentTarget.style.paddingLeft = '1.125rem'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--border)'
-                    e.currentTarget.style.color = 'var(--text-muted)'
-                    e.currentTarget.style.paddingLeft = '1rem'
+                    e.currentTarget.style.borderColor = B1.border
+                    e.currentTarget.style.color = B1.textMuted
+                    e.currentTarget.style.paddingLeft = '0.875rem'
                   }}
                 >
                   <span
                     style={{
                       fontFamily: "'Crimson Pro', serif",
-                      fontSize: '16px',
-                      color: 'var(--accent-gold)',
+                      fontSize: '15px',
+                      color: B1.gold,
                       width: '16px',
                       textAlign: 'center',
+                      flexShrink: 0,
                     }}
                   >
                     {icon}
@@ -388,7 +439,7 @@ export default function ProjectView() {
                   <span
                     style={{
                       fontFamily: "'Crimson Pro', serif",
-                      fontSize: '15px',
+                      fontSize: '14px',
                       letterSpacing: '0.01em',
                     }}
                   >
@@ -398,22 +449,22 @@ export default function ProjectView() {
               ))}
             </div>
 
-            {/* Expand prompt */}
+            {/* Expand card */}
             {project.can_expand && (
               <div
                 style={{
-                  marginTop: '1.5rem',
-                  padding: '1.25rem',
-                  border: '1px solid var(--accent-gold-muted)',
-                  background: 'rgba(180,83,9,0.06)',
+                  marginTop: '1rem',
+                  padding: '1rem',
+                  border: `1px solid ${B1.gold}`,
+                  background: B1.goldSubtle,
                 }}
               >
                 <div
                   style={{
                     fontFamily: "'Playfair Display', serif",
-                    fontSize: '14px',
-                    color: 'var(--accent-gold)',
-                    marginBottom: '0.375rem',
+                    fontSize: '13px',
+                    color: B1.gold,
+                    marginBottom: '0.25rem',
                   }}
                 >
                   原型扩写
@@ -421,19 +472,26 @@ export default function ProjectView() {
                 <p
                   style={{
                     fontFamily: "'Crimson Pro', serif",
-                    fontSize: '13px',
-                    color: 'var(--text-muted)',
+                    fontSize: '12px',
+                    color: B1.textMuted,
                     fontStyle: 'italic',
-                    marginBottom: '1rem',
-                    lineHeight: 1.5,
+                    marginBottom: '0.75rem',
+                    lineHeight: 1.4,
                   }}
                 >
                   当前为原型模式（2人），可扩写为完整6人版本
                 </p>
                 <Link
                   to={`/projects/${encodeURIComponent(project.name)}/phase/expand`}
-                  className="btn-secondary"
-                  style={{ fontSize: '13px' }}
+                  style={{
+                    display: 'inline-block',
+                    padding: '0.4rem 0.75rem',
+                    border: `1px solid ${B1.gold}`,
+                    color: B1.gold,
+                    fontFamily: "'Crimson Pro', serif",
+                    fontSize: '12px',
+                    textDecoration: 'none',
+                  }}
                 >
                   扩写为完整版 →
                 </Link>
