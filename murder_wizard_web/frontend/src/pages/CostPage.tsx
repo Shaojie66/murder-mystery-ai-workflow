@@ -1,20 +1,25 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getCosts } from '../api/files'
 import type { CostSummary } from '../types/api'
 
-// Lazy load the entire Recharts module as a namespace
+// Lazy load named Recharts exports individually
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const Recharts: any = lazy(() => import('recharts') as any)
+const makeLazy = (loader: () => Promise<unknown>) => lazy(loader as () => Promise<{ default: React.ComponentType<any> }>)
 
-// Lazy wrapper components for each chart type
-function LazyBarChart(props: Record<string, unknown>) {
-  return (
-    <Suspense fallback={<div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)', fontFamily: "'Crimson Pro', serif", fontStyle: 'italic' }}>加载图表...</div>}>
-      <Recharts {...props} />
-    </Suspense>
-  )
-}
+const LazyResponsiveContainer = makeLazy(() => import('recharts').then(m => ({ default: m.ResponsiveContainer })))
+const LazyBarChart = makeLazy(() => import('recharts').then(m => ({ default: m.BarChart })))
+const LazyXAxis = makeLazy(() => import('recharts').then(m => ({ default: m.XAxis })))
+const LazyYAxis = makeLazy(() => import('recharts').then(m => ({ default: m.YAxis })))
+const LazyTooltip = makeLazy(() => import('recharts').then(m => ({ default: m.Tooltip })))
+const LazyBar = makeLazy(() => import('recharts').then(m => ({ default: m.Bar })))
+const LazyPieChart = makeLazy(() => import('recharts').then(m => ({ default: m.PieChart })))
+const LazyPie = makeLazy(() => import('recharts').then(m => ({ default: m.Pie })))
+const LazyCell = makeLazy(() => import('recharts').then(m => ({ default: m.Cell })))
+
+const ChartFallback = () => (
+  <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)', fontFamily: "'Crimson Pro', serif", fontStyle: 'italic' }}>加载图表...</div>
+)
 
 const COLORS = ['#9B1C1C', '#B45309', '#78716C', '#44403C', '#292524', '#A89F94']
 
@@ -265,17 +270,17 @@ export default function CostPage() {
                   各阶段消耗
                 </div>
                 {byOperationChart.length > 0 ? (
-                  <LazyBarChart>
-                    <Recharts.ResponsiveContainer width="100%" height={200}>
-                      <Recharts.BarChart data={byOperationChart} layout="vertical">
-                        <Recharts.XAxis
+                  <Suspense fallback={<ChartFallback />}>
+                    <LazyResponsiveContainer width="100%" height={200}>
+                      <LazyBarChart data={byOperationChart} layout="vertical">
+                        <LazyXAxis
                           type="number"
                           tickFormatter={(v: number) => `$${v.toFixed(2)}`}
                           stroke="var(--text-faint)"
                           fontSize={11}
                           tick={{ fontFamily: "'Crimson Pro', serif" }}
                         />
-                        <Recharts.YAxis
+                        <LazyYAxis
                           dataKey="name"
                           type="category"
                           width={100}
@@ -283,7 +288,7 @@ export default function CostPage() {
                           fontSize={10}
                           tick={{ fontFamily: "'Crimson Pro', serif", fill: 'var(--text-muted)' }}
                         />
-                        <Recharts.Tooltip
+                        <LazyTooltip
                           formatter={(v: number) => [`$${v.toFixed(4)}`, '消耗']}
                           contentStyle={{
                             backgroundColor: 'var(--bg-elevated)',
@@ -294,10 +299,10 @@ export default function CostPage() {
                             color: 'var(--text-cream)',
                           }}
                         />
-                        <Recharts.Bar dataKey="cost" fill="var(--accent-gold)" radius={[0, 2, 2, 0]} />
-                      </Recharts.BarChart>
-                    </Recharts.ResponsiveContainer>
-                  </LazyBarChart>
+                        <LazyBar dataKey="cost" fill="var(--accent-gold)" radius={[0, 2, 2, 0]} />
+                      </LazyBarChart>
+                    </LazyResponsiveContainer>
+                  </Suspense>
                 ) : (
                   <div style={{ color: 'var(--text-faint)', fontFamily: "'Crimson Pro', serif", fontStyle: 'italic', fontSize: '14px', paddingTop: '2rem', textAlign: 'center' }}>
                     暂无数据
@@ -312,10 +317,10 @@ export default function CostPage() {
                 </div>
                 {byModelChart.length > 0 ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                    <LazyBarChart>
-                      <Recharts.ResponsiveContainer width={120} height={120}>
-                        <Recharts.PieChart>
-                          <Recharts.Pie
+                    <Suspense fallback={<ChartFallback />}>
+                      <LazyResponsiveContainer width={120} height={120}>
+                        <LazyPieChart>
+                          <LazyPie
                             data={byModelChart}
                             dataKey="cost"
                             nameKey="name"
@@ -324,12 +329,12 @@ export default function CostPage() {
                             innerRadius={32}
                           >
                             {byModelChart.map((_, i) => (
-                              <Recharts.Cell key={i} fill={COLORS[i % COLORS.length]} />
+                              <LazyCell key={i} fill={COLORS[i % COLORS.length]} />
                             ))}
-                          </Recharts.Pie>
-                        </Recharts.PieChart>
-                      </Recharts.ResponsiveContainer>
-                    </LazyBarChart>
+                          </LazyPie>
+                        </LazyPieChart>
+                      </LazyResponsiveContainer>
+                    </Suspense>
                     <div style={{ flex: 1 }}>
                       {byModelChart.map((item, i) => (
                         <div
