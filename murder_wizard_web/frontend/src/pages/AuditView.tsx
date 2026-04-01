@@ -16,7 +16,7 @@ export default function AuditView() {
   useEffect(() => {
     if (!projectName) return
     Promise.all([
-      request<{ content: string }>(`/api/projects/${encodeURIComponent(projectName)}/audit/report`),
+      request<{ content: string }>(`/projects/${encodeURIComponent(projectName)}/audit/report`),
       getProject(projectName),
     ])
       .then(([reportData, projectData]) => {

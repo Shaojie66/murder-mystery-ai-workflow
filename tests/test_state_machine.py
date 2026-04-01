@@ -41,20 +41,6 @@ class TestMurderWizardState:
         assert state.story_type == "puzzle"
         assert state.current_stage == Stage.STAGE_2_SCRIPT
 
-    def test_can_advance_to_valid_transition(self):
-        state = MurderWizardState(
-            project_name="test",
-            current_stage=Stage.STAGE_1_MECHANISM,
-        )
-        assert state.can_advance_to(Stage.STAGE_2_SCRIPT) == True
-
-    def test_can_advance_to_invalid_transition(self):
-        state = MurderWizardState(
-            project_name="test",
-            current_stage=Stage.STAGE_1_MECHANISM,
-        )
-        assert state.can_advance_to(Stage.STAGE_3_VISUAL) == False
-
     def test_advance_to(self):
         state = MurderWizardState(
             project_name="test",

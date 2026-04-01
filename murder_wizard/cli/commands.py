@@ -224,11 +224,14 @@ def resume_project(session: SessionManager, console: Console):
     show_status(session, console)
 
 
-def run_audit(session: SessionManager, console: Console):
+def run_audit(session: SessionManager, console: Console, force: bool = False):
     """完整穿帮审计：对角色剧本、信息矩阵、机制设计进行深度分析
 
     不同于阶段2后自动运行的轻量检查，audit 是独立命令，
     做深度分析，生成完整审计报告。
+
+    Args:
+        force: 如果为 True，即使仍有未解决的 P0 问题也继续到下一阶段
     """
     state = session.load()
 
@@ -240,11 +243,18 @@ def run_audit(session: SessionManager, console: Console):
 
     try:
         runner = PhaseRunner(session, state, console)
-        ok = runner.run_audit()
+        ok = runner.run_audit(force=force)
         if ok:
             console.print("\n[bold green]审计完成！[/bold green]")
         else:
-            console.print("\n[bold red]审计失败，请检查上方错误信息[/bold red]")
+            if force:
+                console.print("\n[yellow]仍有未解决的 P0 问题，但 --force 已启用，继续推进流程[/yellow]")
+            else:
+                console.print("\n[yellow]仍有未解决的 P0 问题。选项：[/yellow]")
+                console.print("  1. 查看 audit_report.md 了解详情")
+                console.print("  2. 手动修复后重新运行 audit")
+                console.print("  3. murder-wizard audit --force 强制推进（不推荐）")
+                console.print("  4. 在 .known_p0 文件中标记 P0 为已知可接受，再用 --force")
 
     except Exception as e:
         console.print(f"[red]审计失败：{e}[/red]")

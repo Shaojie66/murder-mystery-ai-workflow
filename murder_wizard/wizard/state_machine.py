@@ -63,8 +63,8 @@ class MurderWizardState:
     is_prototype: bool = False
     prototype_characters: Optional[list] = None  # 原型中包含的角色
 
-    def can_advance_to(self, next_stage: Stage) -> bool:
-        """检查是否可以转换到下一阶段"""
+    def _can_advance_to(self, next_stage: Stage) -> bool:
+        """检查是否可以转换到下一阶段（内部使用）"""
         transitions = {
             Stage.IDLE: [Stage.TYPE_SELECT],
             Stage.TYPE_SELECT: [Stage.STORY_BRIEF, Stage.STAGE_1_MECHANISM],
@@ -87,7 +87,7 @@ class MurderWizardState:
 
     def advance_to(self, next_stage: Stage) -> None:
         """转换到下一阶段"""
-        if self.can_advance_to(next_stage):
+        if self._can_advance_to(next_stage):
             self.current_stage = next_stage
         else:
             raise ValueError(f"Cannot transition from {self.current_stage} to {next_stage}")

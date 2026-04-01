@@ -3,9 +3,19 @@ import hmac
 import hashlib
 import base64
 import json
+import os
 import time
 
-SECRET_KEY = "murder-wizard-secret-key-change-in-production"
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    import warnings
+    warnings.warn(
+        "JWT_SECRET_KEY not set — using insecure default for development only. "
+        "Set JWT_SECRET_KEY env var in production.",
+        UserWarning,
+        stacklevel=2,
+    )
+    SECRET_KEY = "insecure-dev-secret-do-not-use-in-production"
 TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365  # 1 year
 
 

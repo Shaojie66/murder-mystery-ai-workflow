@@ -20,6 +20,18 @@ class FileInfo(BaseModel):
     modified: str
 
 
+def _validate_project_name(name: str) -> None:
+    """Validate project name to prevent path traversal attacks."""
+    if not name:
+        raise HTTPException(status_code=400, detail="Project name cannot be empty")
+    if name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid project name")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Project name cannot contain path separators or '..'")
+    if name.startswith("-"):
+        raise HTTPException(status_code=400, detail="Project name cannot start with '-'")
+
+
 def _get_file_type(name: str) -> str:
     if name.endswith(".md"):
         return "markdown"
@@ -35,6 +47,7 @@ def _get_file_type(name: str) -> str:
 @router.get("")
 async def list_files(project_name: str):
     """List all files in a project."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -59,6 +72,7 @@ async def download_file(project_name: str, filename: str):
     """Download a file."""
     from fastapi.responses import FileResponse
 
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -82,6 +96,7 @@ async def download_file(project_name: str, filename: str):
 @router.get("/{filename:path}")
 async def get_file(project_name: str, filename: str):
     """Get file content."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -112,6 +127,7 @@ async def get_file(project_name: str, filename: str):
 @router.put("/{filename:path}")
 async def save_file(project_name: str, filename: str, req: SaveFileRequest):
     """Save file content."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")

@@ -9,7 +9,6 @@ from io import StringIO
 from rich.console import Console
 from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
-from murder_wizard.wizard.truth_files import TruthFileManager
 
 
 class SSEConsole(Console):
@@ -197,7 +196,7 @@ class PhaseRunnerWeb:
             self.emit("error", {"message": str(e), "type": type(e).__name__})
             return False
 
-    async def run_audit(self) -> bool:
+    async def run_audit(self, force: bool = False) -> bool:
         """Run the full audit with Reviser auto-fix loop."""
         from murder_wizard.cli.phase_runner import PhaseRunner
 
@@ -223,7 +222,7 @@ class PhaseRunnerWeb:
         runner.console.print = self.sse_console.print
 
         try:
-            success = runner.run_audit()
+            success = runner.run_audit(force=force)
             self.emit("audit_complete", {
                 "success": success,
                 "total_cost": self._total_cost,
