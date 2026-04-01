@@ -256,9 +256,11 @@ export default function PhaseExecution() {
             <div
               style={{
                 height: '100%',
-                width: `${progress}%`,
+                width: '100%',
+                transform: `scaleX(${progress / 100})`,
+                transformOrigin: 'left center',
                 background: 'var(--accent-gold)',
-                transition: 'width 300ms ease-out',
+                transition: 'transform 300ms ease-out',
               }}
             />
           </div>
@@ -268,6 +270,8 @@ export default function PhaseExecution() {
       {/* Output */}
       <div
         ref={outputRef}
+        aria-live="polite"
+        aria-atomic="false"
         style={{
           flex: 1,
           overflowY: 'auto',

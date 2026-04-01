@@ -52,8 +52,8 @@ export default function VisualGallery({ projectName, prompts }: VisualGalleryPro
             aspect_ratio: '16:9',
           })
           results.push({ url: result.url, prompt })
-        } catch (e) {
-          console.error('Failed to generate image:', e)
+        } catch {
+          // Silent failure — loop continues with remaining prompts
         }
       }
       setGeneratedImages(results)
@@ -152,9 +152,28 @@ export default function VisualGallery({ projectName, prompts }: VisualGalleryPro
                   display: 'block',
                 }}
                 onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none'
+                  const img = e.target as HTMLImageElement
+                  img.style.display = 'none'
+                  const placeholder = img.nextElementSibling as HTMLElement
+                  if (placeholder) {
+                    placeholder.style.display = 'flex'
+                  }
                 }}
               />
+              {/* Placeholder shown when image fails to load */}
+              <div
+                aria-hidden="true"
+                style={{
+                  display: 'none',
+                  height: '140px',
+                  background: 'var(--bg-base)',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <span style={{ color: 'var(--border)', fontSize: '2rem' }}>◻</span>
+              </div>
               <div
                 style={{
                   padding: '0.5rem',

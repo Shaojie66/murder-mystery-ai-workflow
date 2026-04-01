@@ -7,22 +7,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        'mw-red': '#9B1C1C',
-        'mw-gold': '#B45309',
-        'mw-dark': '#12110F',
-        'mw-surface': '#1C1917',
-        'mw-border': '#3D3532',
-        // Editorial palette
-        'editorial': {
-          'bg': '#12110F',
-          'raised': '#1C1917',
-          'elevated': '#292524',
-          'cream': '#F5F0E8',
-          'muted': '#A89F94',
-          'faint': '#6B6460',
-          'crimson': '#9B1C1C',
-          'gold': '#B45309',
-        },
+        // Design tokens defined in index.css as CSS variables
+        // Additional semantic tokens if needed:
       },
       fontFamily: {
         'serif': ['Playfair Display', 'Georgia', 'serif'],

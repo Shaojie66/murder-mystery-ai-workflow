@@ -157,7 +157,7 @@ export default function Dashboard() {
 
         {/* Loading skeleton */}
         {loading && projects.length === 0 && (
-          <div style={{ padding: '2rem 0' }}>
+          <div style={{ padding: '2rem 0' }} aria-busy="true" role="status" aria-label="加载中">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
@@ -337,6 +337,7 @@ export default function Dashboard() {
                   {/* Delete button — sibling of Link, not nested */}
                   <button
                     onClick={(e) => handleDelete(project.name, e)}
+                    aria-label={`删除项目 ${project.name}`}
                     className="delete-btn"
                     style={{
                       position: 'absolute',
@@ -377,6 +378,9 @@ export default function Dashboard() {
           onClick={(e) => e.target === e.currentTarget && setShowCreate(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-modal-title"
             style={{
               background: 'var(--bg-raised)',
               border: '1px solid var(--border)',
@@ -391,6 +395,7 @@ export default function Dashboard() {
               新建项目
             </div>
             <h2
+              id="create-modal-title"
               style={{
                 fontFamily: "'Playfair Display', serif",
                 fontSize: '1.75rem',

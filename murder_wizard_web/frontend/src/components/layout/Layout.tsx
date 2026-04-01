@@ -19,6 +19,10 @@ export default function Layout() {
         <div
           className="sidebar-overlay"
           onClick={() => setSidebarOpen(false)}
+          onKeyDown={(e) => e.key === 'Escape' && setSidebarOpen(false)}
+          tabIndex={0}
+          role="button"
+          aria-label="关闭菜单"
           style={{
             position: 'fixed',
             inset: 0,

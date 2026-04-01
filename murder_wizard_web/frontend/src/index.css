@@ -25,6 +25,20 @@
   --output-success: #86EFAC;
   --output-error-bg: rgba(239, 68, 68, 0.12);
   --output-error-border: rgba(239, 68, 68, 0.4);
+  /* Matrix state colors */
+  --state-know: #166534;
+  --state-suspect: #854D0E;
+  --state-unaware: #9A3412;
+  --state-unknown: #3F3F46;
+  --state-mislead: #6B21A8;
+  --state-conceal: #991B1B;
+  /* Cost chart palette */
+  --chart-0: #9B1C1C;
+  --chart-1: #B45309;
+  --chart-2: #78716C;
+  --chart-3: #44403C;
+  --chart-4: #292524;
+  --chart-5: #A89F94;
 }
 
 * {

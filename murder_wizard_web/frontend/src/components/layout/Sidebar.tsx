@@ -93,13 +93,18 @@ export default function Sidebar({ onClose }: SidebarProps) {
               border: 'none',
               color: 'var(--text-faint)',
               cursor: 'pointer',
-              fontSize: '18px',
               padding: '2px 4px',
               lineHeight: 1,
               flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            ×
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <line x1="4" y1="4" x2="12" y2="12" />
+              <line x1="12" y1="4" x2="4" y2="12" />
+            </svg>
           </button>
         )}
       </div>

@@ -4,12 +4,12 @@ import { getMatrix, updateMatrixCell, initializeMatrix } from '../api/files'
 import type { CharacterMatrix, CognitiveState } from '../types/api'
 
 const STATE_COLORS: Record<string, string> = {
-  '知': '#166534',
-  '疑': '#854D0E',
-  '昧': '#9A3412',
-  '否': '#3F3F46',
-  '误信': '#6B21A8',
-  '隐瞒': '#991B1B',
+  '知': 'var(--state-know)',
+  '疑': 'var(--state-suspect)',
+  '昧': 'var(--state-unaware)',
+  '否': 'var(--state-unknown)',
+  '误信': 'var(--state-mislead)',
+  '隐瞒': 'var(--state-conceal)',
 }
 
 const STATE_LABELS: Record<string, string> = {
@@ -509,6 +509,9 @@ export default function MatrixEditor() {
           onClick={(e) => e.target === e.currentTarget && setEditingCell(null)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cell-edit-title"
             style={{
               background: 'var(--bg-raised)',
               border: '1px solid var(--border)',
@@ -523,6 +526,7 @@ export default function MatrixEditor() {
               编辑认知
             </div>
             <h2
+              id="cell-edit-title"
               style={{
                 fontFamily: "'Playfair Display', serif",
                 fontSize: '1.25rem',
