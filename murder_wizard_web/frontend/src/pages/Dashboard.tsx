@@ -41,6 +41,8 @@ export default function Dashboard() {
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState('mechanic')
   const [newPrototype, setNewPrototype] = useState(true)
+  const [filterType, setFilterType] = useState('all')
+  const [filterStage, setFilterStage] = useState('all')
   const navigate = useNavigate()
   const { setProjects: setStoreProjects } = useProjectStore()
 
@@ -58,6 +60,12 @@ export default function Dashboard() {
   }
 
   useEffect(() => { loadProjects() }, [])
+
+  const filteredProjects = projects.filter((p) => {
+    const typeMatch = filterType === 'all' || p.story_type === filterType
+    const stageMatch = filterStage === 'all' || p.current_stage === filterStage
+    return typeMatch && stageMatch
+  })
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -121,9 +129,9 @@ export default function Dashboard() {
               fontStyle: 'italic',
             }}
           >
-            {projects.length > 0
-              ? `${projects.length} 个项目在进行中`
-              : '开始你的第一个剧本杀创作'}
+            {filteredProjects.length > 0
+              ? `${filteredProjects.length} 个项目`
+              : projects.length > 0 ? '没有匹配的项目' : '开始你的第一个剧本杀创作'}
           </p>
         </div>
       </header>
@@ -138,10 +146,62 @@ export default function Dashboard() {
             padding: '1.5rem 0',
             borderBottom: '1px solid var(--border-subtle)',
             marginBottom: '2rem',
+            gap: '1rem',
+            flexWrap: 'wrap',
           }}
         >
-          <div className="label" style={{ color: 'var(--text-faint)' }}>
-            项目
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+            <div className="label" style={{ color: 'var(--text-faint)' }}>
+              项目
+            </div>
+            {/* Type filter */}
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              style={{
+                fontFamily: "'Crimson Pro', serif",
+                fontSize: '13px',
+                color: 'var(--text-muted)',
+                background: 'var(--bg-raised)',
+                border: '1px solid var(--border)',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="all">全部类型</option>
+              <option value="emotion">情感本</option>
+              <option value="reasoning">推理本</option>
+              <option value="fun">欢乐本</option>
+              <option value="horror">恐怖本</option>
+              <option value="mechanic">机制本</option>
+            </select>
+            {/* Stage filter */}
+            <select
+              value={filterStage}
+              onChange={(e) => setFilterStage(e.target.value)}
+              style={{
+                fontFamily: "'Crimson Pro', serif",
+                fontSize: '13px',
+                color: 'var(--text-muted)',
+                background: 'var(--bg-raised)',
+                border: '1px solid var(--border)',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="all">全部进度</option>
+              <option value="idle">未开始</option>
+              <option value="stage_1_mechanism">机制设计</option>
+              <option value="stage_2_script">剧本创作</option>
+              <option value="stage_3_visual">视觉物料</option>
+              <option value="stage_4_test">用户测试</option>
+              <option value="stage_5_commercial">商业化</option>
+              <option value="stage_6_print">印刷生产</option>
+              <option value="stage_7_promo">宣发内容</option>
+              <option value="stage_8_community">社区运营</option>
+            </select>
           </div>
           <button onClick={() => setShowCreate(true)} className="btn-primary" style={{ fontSize: '13px' }}>
             + 新建项目
@@ -226,9 +286,9 @@ export default function Dashboard() {
         )}
 
         {/* Project list — editorial rows */}
-        {projects.length > 0 && (
+        {filteredProjects.length > 0 && (
           <div>
-            {projects.map((project) => (
+            {filteredProjects.map((project) => (
               <div
                 key={project.name}
                 style={{
