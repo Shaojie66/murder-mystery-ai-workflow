@@ -56,10 +56,18 @@ def clean_isolated_projects():
     _clean_projects_dir()
 
 
+@pytest.fixture
+def auth_headers():
+    """Return a valid Authorization header for test requests."""
+    from core.auth import encode_token
+    token = encode_token("test-user")
+    return {"Authorization": f"Bearer {token}"}
+
+
 class TestProjectsAPI:
     """Test /api/projects endpoints."""
 
-    def test_create_project_all_five_types(self):
+    def test_create_project_all_five_types(self, auth_headers):
         """POST /api/projects creates projects for all 5 story types."""
         from fastapi.testclient import TestClient
         from murder_wizard_web.backend.main import app
@@ -76,13 +84,14 @@ class TestProjectsAPI:
                             "era": "现代",
                             "answers": {},
                         },
+                        headers=auth_headers,
                     )
                     assert response.status_code == 200, f"Failed for {story_type}: {response.text}"
                     data = response.json()
                     assert data["name"] == f"test-{story_type}"
                     assert data["status"] == "created"
 
-    def test_get_project_returns_story_type_and_prototype_flag(self):
+    def test_get_project_returns_story_type_and_prototype_flag(self, auth_headers):
         """GET /api/projects/{name} returns correct story_type and is_prototype."""
         from fastapi.testclient import TestClient
         from murder_wizard_web.backend.main import app
@@ -98,14 +107,15 @@ class TestProjectsAPI:
                         "era": "现代",
                         "answers": {},
                     },
+                    headers=auth_headers,
                 )
-                response = client.get("/api/projects/test-get-type")
+                response = client.get("/api/projects/test-get-type", headers=auth_headers)
                 assert response.status_code == 200
                 data = response.json()
                 assert data["story_type"] == "reasoning"
                 assert data["is_prototype"] == False
 
-    def test_delete_project_removes_it(self):
+    def test_delete_project_removes_it(self, auth_headers):
         """DELETE /api/projects/{name} removes the project."""
         from fastapi.testclient import TestClient
         from murder_wizard_web.backend.main import app
@@ -121,13 +131,14 @@ class TestProjectsAPI:
                         "era": "现代",
                         "answers": {},
                     },
+                    headers=auth_headers,
                 )
-                assert client.get("/api/projects/to-delete").status_code == 200
-                response = client.delete("/api/projects/to-delete")
+                assert client.get("/api/projects/to-delete", headers=auth_headers).status_code == 200
+                response = client.delete("/api/projects/to-delete", headers=auth_headers)
                 assert response.status_code == 200
-                assert client.get("/api/projects/to-delete").status_code == 404
+                assert client.get("/api/projects/to-delete", headers=auth_headers).status_code == 404
 
-    def test_list_projects_returns_correct_count(self):
+    def test_list_projects_returns_correct_count(self, auth_headers):
         """GET /api/projects returns exactly the projects created in this test."""
         from fastapi.testclient import TestClient
         from murder_wizard_web.backend.main import app
@@ -140,11 +151,12 @@ class TestProjectsAPI:
                     r = client.post(
                         "/api/projects",
                         json={"name": name, "story_type": stype, "is_prototype": True, "era": "现代", "answers": {}},
+                        headers=auth_headers,
                     )
                     assert r.status_code == 200
                     created.append(name)
                 # List — should only return the 3 we just created (isolated dir)
-                response = client.get("/api/projects")
+                response = client.get("/api/projects", headers=auth_headers)
                 assert response.status_code == 200
                 data = response.json()
                 names = [p["name"] for p in data["projects"]]
@@ -154,7 +166,7 @@ class TestProjectsAPI:
 class TestPhasesAPI:
     """Test /api/projects/{name}/phases/* endpoints."""
 
-    def test_phase_status_shows_not_running_after_creation(self):
+    def test_phase_status_shows_not_running_after_creation(self, auth_headers):
         """Newly created project has no running phase."""
         from fastapi.testclient import TestClient
         from murder_wizard_web.backend.main import app
@@ -164,19 +176,20 @@ class TestPhasesAPI:
                 client.post(
                     "/api/projects",
                     json={"name": "status-test", "story_type": "emotion", "is_prototype": True, "era": "现代", "answers": {}},
+                    headers=auth_headers,
                 )
-                response = client.get("/api/projects/status-test/phases/1/status")
+                response = client.get("/api/projects/status-test/phases/1/status", headers=auth_headers)
                 assert response.status_code == 200
                 data = response.json()
                 assert data["running"] == False
 
-    def test_cancel_returns_cancelled_true(self):
+    def test_cancel_returns_cancelled_true(self, auth_headers):
         """Cancel endpoint always returns cancelled=True."""
         from fastapi.testclient import TestClient
         from murder_wizard_web.backend.main import app
 
         with patch("murder_wizard.llm.client.create_llm_adapter", _mock_llm_factory()):
             with TestClient(app) as client:
-                response = client.post("/api/projects/nonexistent/phases/1/cancel")
+                response = client.post("/api/projects/nonexistent/phases/1/cancel", headers=auth_headers)
                 assert response.status_code == 200
                 assert response.json()["cancelled"] == True

@@ -1,5 +1,5 @@
 """Project CRUD API endpoints."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
 from pathlib import Path
@@ -8,8 +8,19 @@ import shutil
 
 from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
+from core.auth import decode_token
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
+
+
+async def require_auth(authorization: Optional[str] = Header(None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = authorization[7:]
+    user_id = decode_token(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return user_id
 
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 
@@ -127,7 +138,7 @@ async def list_projects():
 
 
 @router.post("", response_model=dict)
-async def create_project(req: CreateProjectRequest):
+async def create_project(req: CreateProjectRequest, user_id: str = Depends(require_auth)):
     """Create a new project (simplified init without interactive wizard)."""
     project_path = MURDER_WIZARD_BASE / req.name
 

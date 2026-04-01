@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import Dashboard from './pages/Dashboard'
 import ProjectView from './pages/ProjectView'
 import PhaseExecution from './pages/PhaseExecution'
@@ -11,8 +12,10 @@ import Settings from './pages/Settings'
 import Subscription from './pages/Subscription'
 import Layout from './components/layout/Layout'
 import { LandingA, LandingB, LandingPage } from './landing'
+import { ensureToken } from './api/client'
 
 export default function App() {
+  useEffect(() => { ensureToken() }, [])
   return (
     <BrowserRouter>
       <Routes>
