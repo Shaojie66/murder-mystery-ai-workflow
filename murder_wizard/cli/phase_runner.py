@@ -81,21 +81,7 @@ class PhaseRunner:
             return True
 
         prompt = self._build_mechanism_prompt()
-        system = """你是一个专业的剧本杀机制设计师。
-
-擅长设计：
-1. 公平、有趣的游戏机制
-2. 阵营对抗和投票机制
-3. 搜证和推理机制
-4. 角色技能和特殊能力
-5. 回合流程和阶段划分
-
-你设计的机制要：
-- 每个阵营都有获胜机会
-- 玩家有多种策略选择
-- 线索有层次感（表面线索、深层线索、关键线索）
-- 有记忆点（让人印象深刻的机制）"""
-
+        system = self._loader.system_mechanism_designer(self.state.story_type)
         try:
             with Progress(
                 SpinnerColumn(),

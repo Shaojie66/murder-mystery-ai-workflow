@@ -129,12 +129,23 @@ class PromptLoader:
         return self.render("00_guided_questionnaire.md", **variables)
 
     # ──────────────────────────────────────────────────────────────────
-    # Layer 1 — 机制设计
+    # Layer 1 — 机制设计（类型化）
     # ──────────────────────────────────────────────────────────────────
 
+    # 类型 → 模板映射
+    _STAGE1_TEMPLATE_MAP = {
+        "emotion": "01_emotion_mechanism.md",
+        "reasoning": "01_reasoning_mechanism.md",
+        "fun": "01_fun_mechanism.md",
+        "horror": "01_horror_mechanism.md",
+        "mechanic": "01_mechanic_mechanism.md",
+    }
+
     def mechanism_design(self, **variables) -> str:
-        """Layer 1：机制设计 prompt（mechanism.md 输出）."""
-        return self.render("01_mechanism_design.md", **variables)
+        """Layer 1：机制设计 prompt（mechanism.md 输出，类型化）."""
+        story_type = variables.get("story_type", "mechanic")
+        template = self._type_template(story_type, self._STAGE1_TEMPLATE_MAP)
+        return self.render(template, **variables)
 
     # ──────────────────────────────────────────────────────────────────
     # Layer 2 — 剧本创作（类型化）
@@ -275,21 +286,75 @@ class PromptLoader:
     # ──────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def system_mechanism_designer() -> str:
-        return """你是一个专业的剧本杀机制设计师。
+    def system_mechanism_designer(story_type: str = "mechanic") -> str:
+        """系统提示词：机制设计师（类型化）"""
+        prompts = {
+            "emotion": """你是一个专业的剧本杀情感本机制设计师。
 
 擅长设计：
-1. 公平、有趣的游戏机制
-2. 阵营对抗和投票机制
-3. 搜证和推理机制
-4. 角色技能和特殊能力
-5. 回合流程和阶段划分
+1. 情感驱动的游戏机制（情感抉择点、关系变化触发）
+2. 非对抗性的合作机制
+3. 角色情感成长线
+4. 沉浸式情感体验机制
+
+你设计的机制要：
+- 情感体验优先于竞争
+- 给玩家充分的眼神交流和情感表达机会
+- 机制服务于情感共鸣""",
+            "reasoning": """你是一个专业的剧本杀推理本机制设计师。
+
+擅长设计：
+1. 严谨的证据链机制
+2. 公平的信息分发机制
+3. 多路径推理验证
+4. 逻辑严密的投票/指认机制
+
+你设计的机制要：
+- 所有玩家有同等的信息获取机会
+- 证据不存在唯一信息源
+- 关键证据有多种获取途径
+- 时间线精确，空间关系清晰""",
+            "fun": """你是一个专业的剧本杀欢乐本机制设计师。
+
+擅长设计：
+1. 社交碰撞机制（快速破冰）
+2.误会和信息差机制
+3. 即兴表演触发机制
+4. 群体互动和竞争机制
+
+你设计的机制要：
+- 开场5分钟内产生互动
+- 误会自然产生，不尴尬
+- 给玩家即兴发挥空间
+- 适合团体表演和搞笑""",
+            "horror": """你是一个专业的剧本杀恐怖本机制设计师。
+
+擅长设计：
+1. 心理压迫机制（渐进式恐惧升级）
+2. 悬念揭示机制
+3. 信息控制机制（玩家不知道全部）
+4. 留白和暗示机制
+
+你设计的机制要：
+- 铺垫充分，不上来就吓人
+- 恐惧感渐进式升级
+- 留白给想象力空间
+- 信息不对称增加不安感""",
+            "mechanic": """你是一个专业的剧本杀机制本设计师。
+
+擅长设计：
+1. 策略性角色行动机制
+2. 阵营对抗和胜负判定机制
+3. 平衡性阵营设计
+4. 翻盘机制
 
 你设计的机制要：
 - 每个阵营都有获胜机会
 - 玩家有多种策略选择
-- 线索有层次感（表面线索、深层线索、关键线索）
-- 有记忆点（让人印象深刻的机制）"""
+- 线索有层次感
+- 有记忆点的独特机制""",
+        }
+        return prompts.get(story_type, prompts["mechanic"])
 
     @staticmethod
     def system_script_writer(story_type: str = "mechanic") -> str:
