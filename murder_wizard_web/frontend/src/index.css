@@ -19,12 +19,26 @@
   --accent-gold-muted: #92400E;
   --accent-gold-subtle: rgba(180, 83, 9, 0.15);
   --cream-subtle: rgba(245, 240, 232, 0.06);
+  /* Landing page tokens */
+  --accent-orange: #d97757;
+  --green-status: #788c5d;
   /* Semantic output colors */
   --output-token: #D4C9BC;
   --output-error: #F87171;
   --output-success: #86EFAC;
   --output-error-bg: rgba(239, 68, 68, 0.12);
   --output-error-border: rgba(239, 68, 68, 0.4);
+  /* LandingB light-theme tokens */
+  --lbg-bg: #faf9f5;
+  --lbg-surface: #ffffff;
+  --lbg-border: #e8e6dc;
+  --lbg-text: #141413;
+  --lbg-muted: #666666;
+  --lbg-faint: #999999;
+  --lbg-accent: #d97757;
+  --lbg-green: #788c5d;
+  --lbg-blue: #6a9bcc;
+  --lbg-terminal-bg: #0d0d0c;
   /* Matrix state colors */
   --state-know: #166534;
   --state-suspect: #854D0E;
@@ -217,6 +231,18 @@ input::placeholder, textarea::placeholder {
   .blink-cursor { animation: none !important; }
 }
 
+/* Pulse dot — respects prefers-reduced-motion */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot { animation: none !important; }
+}
+
 /* Links */
 a {
   color: inherit;
@@ -241,7 +267,43 @@ a {
   }
 }
 
-/* Delete button hover reveal */
+/* Delete button — revealed on parent hover/focus, keyboard accessible via opacity+pointer-events */
+.delete-btn {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms;
+}
+tr:hover .delete-btn,
+tr:focus-within .delete-btn,
+div:hover .delete-btn,
+div:focus-within .delete-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Mobile sidebar overlay */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 40;
+}
+
+/* Mobile sidebar drawer */
+.sidebar-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 50;
+  transform: translateX(-100%);
+  transition: transform 200ms ease-out;
+}
+.sidebar-drawer.open {
+  transform: translateX(0);
+}
+
+/* Checkbox */
 input[type="checkbox"] {
   accent-color: var(--accent-crimson);
   width: 16px;

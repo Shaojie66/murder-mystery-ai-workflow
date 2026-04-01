@@ -6,8 +6,18 @@ import type { Project } from '../types/api'
 
 const STORY_TYPE_LABELS: Record<string, string> = {
   emotion: '情感本',
+  reasoning: '推理本',
+  fun: '欢乐本',
+  horror: '恐怖本',
   mechanic: '机制本',
-  puzzle: '解谜本',
+}
+
+const STORY_TYPE_DESCRIPTIONS: Record<string, string> = {
+  emotion: '侧重角色情感、人物关系、沉浸式体验',
+  reasoning: '侧重逻辑推理、线索链、公平性验证',
+  fun: '侧重欢乐氛围、社交互动、游戏性',
+  horror: '侧重恐怖氛围、悬疑营造、心理压迫',
+  mechanic: '侧重游戏机制、策略对抗、阵营博弈',
 }
 
 const STAGE_SHORT: Record<string, string> = {
@@ -157,7 +167,7 @@ export default function Dashboard() {
 
         {/* Loading skeleton */}
         {loading && projects.length === 0 && (
-          <div style={{ padding: '2rem 0' }} aria-busy="true" role="status" aria-label="加载中">
+          <div aria-busy="true" aria-label="加载项目中" style={{ padding: '2rem 0' }}>
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
@@ -334,24 +344,22 @@ export default function Dashboard() {
                     </div>
                   </Link>
 
-                  {/* Delete button — sibling of Link, not nested */}
+                  {/* Delete button — visually hidden until parent hover, keyboard accessible */}
                   <button
                     onClick={(e) => handleDelete(project.name, e)}
-                    aria-label={`删除项目 ${project.name}`}
                     className="delete-btn"
+                    aria-label={`删除项目 ${project.name}`}
                     style={{
                       position: 'absolute',
                       right: 0,
                       top: '1.5rem',
                       background: 'none',
                       border: 'none',
-                      color: 'var(--text-faint)',
+                      color: 'var(--text-muted)',
                       fontSize: '12px',
                       cursor: 'pointer',
                       padding: '4px 8px',
                       fontFamily: "'Crimson Pro', serif",
-                      opacity: 0,
-                      transition: 'opacity 150ms',
                     }}
                   >
                     删除
@@ -378,9 +386,6 @@ export default function Dashboard() {
           onClick={(e) => e.target === e.currentTarget && setShowCreate(false)}
         >
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-modal-title"
             style={{
               background: 'var(--bg-raised)',
               border: '1px solid var(--border)',
@@ -395,7 +400,6 @@ export default function Dashboard() {
               新建项目
             </div>
             <h2
-              id="create-modal-title"
               style={{
                 fontFamily: "'Playfair Display', serif",
                 fontSize: '1.75rem',
@@ -433,10 +437,23 @@ export default function Dashboard() {
                   剧本类型
                 </label>
                 <select value={newType} onChange={(e) => setNewType(e.target.value)}>
-                  <option value="mechanic">机制本</option>
                   <option value="emotion">情感本</option>
-                  <option value="puzzle">解谜本</option>
+                  <option value="reasoning">推理本</option>
+                  <option value="fun">欢乐本</option>
+                  <option value="horror">恐怖本</option>
+                  <option value="mechanic">机制本</option>
                 </select>
+                <div
+                  style={{
+                    fontFamily: "'Crimson Pro', serif",
+                    fontSize: '13px',
+                    color: 'var(--text-faint)',
+                    fontStyle: 'italic',
+                    marginTop: '0.375rem',
+                  }}
+                >
+                  {STORY_TYPE_DESCRIPTIONS[newType]}
+                </div>
               </div>
 
               <div>

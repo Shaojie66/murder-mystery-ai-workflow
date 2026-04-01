@@ -16,7 +16,7 @@ MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 
 class CreateProjectRequest(BaseModel):
     name: str
-    story_type: str = "mechanic"
+    story_type: str = "emotion"  # emotion, reasoning, fun, horror, mechanic
     is_prototype: bool = True
     era: str = "现代"
     answers: Optional[dict] = None

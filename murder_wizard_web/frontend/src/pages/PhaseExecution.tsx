@@ -342,7 +342,7 @@ export default function PhaseExecution() {
         ))}
 
         {running && output.length > 0 && (
-          <span className="blink-cursor" style={{ color: 'var(--text-faint)', animation: 'blink 1s step-end infinite' }}>
+          <span className="blink-cursor" style={{ color: 'var(--text-faint)' }}>
             ▌
           </span>
         )}

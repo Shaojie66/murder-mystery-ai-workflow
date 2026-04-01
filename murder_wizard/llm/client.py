@@ -39,14 +39,14 @@ class LLMAdapter(ABC):
 class ClaudeAdapter(LLMAdapter):
     """Anthropic Claude 适配器"""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         try:
             from anthropic import Anthropic
         except ImportError:
             raise ImportError("anthropic package not installed. Run: pip install anthropic")
 
         self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
-        self.model = "claude-3-5-sonnet-20241022"
+        self.model = model or os.environ.get("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
         import anthropic
@@ -104,20 +104,20 @@ class ClaudeAdapter(LLMAdapter):
 class MiniMaxAdapter(LLMAdapter):
     """MiniMax 适配器 - 使用 Anthropic SDK 格式"""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, model: Optional[str] = None):
         try:
             from anthropic import Anthropic
         except ImportError:
             raise ImportError("anthropic package not installed. Run: pip install anthropic")
 
-        base_url = os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic")
+        base_url = base_url or os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic")
         api_key = api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")
 
         self.client = Anthropic(
             api_key=api_key,
             base_url=base_url,
         )
-        self.model = os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
+        self.model = model or os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
 
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
         import anthropic
@@ -183,14 +183,14 @@ class MiniMaxAdapter(LLMAdapter):
 class OpenAIAdapter(LLMAdapter):
     """OpenAI GPT 适配器"""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         try:
             from openai import OpenAI
         except ImportError:
             raise ImportError("openai package not installed. Run: pip install openai")
 
         self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
-        self.model = "gpt-4o"
+        self.model = model or os.environ.get("OPENAI_MODEL", "gpt-4o")
 
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
         from openai import RateLimitError
@@ -372,21 +372,54 @@ class OllamaAdapter(LLMAdapter):
         return int(chinese_chars / 2 + other_chars / 4)
 
 
-def create_llm_adapter(provider: str = "claude") -> LLMAdapter:
+def _load_settings_from_file():
+    """Load settings from the settings file."""
+    from pathlib import Path
+    import json
+
+    settings_path = Path.home() / ".murder-wizard" / "settings.json"
+    if not settings_path.exists():
+        return None
+
+    try:
+        return json.loads(settings_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def create_llm_adapter(provider: str = None, settings: dict = None) -> LLMAdapter:
     """工厂函数：创建 LLM 适配器
 
     Args:
-        provider: "claude" / "openai" / "ollama" / "minimax"
+        provider: "claude" / "openai" / "ollama" / "minimax" (optional, reads from settings)
+        settings: Settings dict from settings.json (optional)
     """
+    # Load from settings file if not provided
+    if settings is None:
+        settings = _load_settings_from_file()
+
+    # Get provider from settings if not explicitly provided
+    if provider is None and settings:
+        provider = settings.get("llm", {}).get("provider", "minimax")
+    elif provider is None:
+        provider = "minimax"  # Default
+
+    llm_config = settings.get("llm", {}) if settings else {}
+
     if provider == "claude":
-        return ClaudeAdapter()
+        api_key = llm_config.get("api_key") or os.environ.get("ANTHROPIC_API_KEY")
+        return ClaudeAdapter(api_key=api_key)
     elif provider == "openai" or provider == "gpt":
-        return OpenAIAdapter()
+        api_key = llm_config.get("api_key") or os.environ.get("OPENAI_API_KEY")
+        return OpenAIAdapter(api_key=api_key)
     elif provider == "ollama":
-        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-        model = os.environ.get("OLLAMA_MODEL", "llama3")
+        base_url = llm_config.get("base_url") or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        model = llm_config.get("model") or os.environ.get("OLLAMA_MODEL", "llama3")
         return OllamaAdapter(base_url=base_url, model=model)
     elif provider == "minimax":
-        return MiniMaxAdapter()
+        api_key = llm_config.get("api_key") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")
+        base_url = llm_config.get("base_url") or os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic")
+        model = llm_config.get("model") or os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
+        return MiniMaxAdapter(api_key=api_key, base_url=base_url, model=model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")

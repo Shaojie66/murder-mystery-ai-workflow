@@ -15,17 +15,29 @@ class SSEConnection:
 
     async def event_stream(self) -> AsyncGenerator[str, None]:
         """Yield SSE-formatted events from the queue."""
+        import json
         while not self._cancelled:
             try:
                 event = await asyncio.wait_for(self.queue.get(), timeout=60)
-                if event is None:
-                    # End signal
-                    yield f"event: end\ndata: {{}}\n\n"
+                # Check sentinel BEFORE yielding — avoid KeyError on __CANCEL__ sentinel
+                if event is None or event.get("__CANCEL__"):
+                    # Drain remaining events then exit
+                    while True:
+                        try:
+                            next_event = self.queue.get_nowait()
+                            if next_event is None or next_event.get("__CANCEL__"):
+                                break
+                            yield {"event": next_event["event"], "data": next_event["data"]}
+                        except asyncio.QueueEmpty:
+                            break
                     break
-                yield f"event: {event['event']}\ndata: {event['data']}\n\n"
+                # Yield the received event
+                yield {"event": event["event"], "data": event["data"]}
             except asyncio.TimeoutError:
                 # Keepalive: send a comment every 60s
-                yield f": keepalive\n\n"
+                yield ": keepalive\n\n"
+            except asyncio.CancelledError:
+                break
 
     def put(self, event: str, data: dict) -> None:
         """Add an event to the queue (thread-safe)."""
@@ -38,7 +50,11 @@ class SSEConnection:
     def cancel(self) -> None:
         """Signal this connection to end."""
         self._cancelled = True
-        self.queue.put_nowait(None)
+        # Put a cancel sentinel that will break the event_stream
+        try:
+            self.queue.put_nowait({"__CANCEL__": True})
+        except asyncio.QueueFull:
+            pass
 
 
 class SSEManager:
@@ -51,8 +67,10 @@ class SSEManager:
     async def create_connection(self, project_name: str) -> SSEConnection:
         """Create a new SSE connection for a project."""
         async with self._lock:
-            # Cancel existing connection if any
-            await self.cancel_connection(project_name)
+            # Cancel existing connection if any (don't use await to avoid deadlock)
+            if project_name in self._connections:
+                self._connections[project_name].cancel()
+                del self._connections[project_name]
             conn = SSEConnection(project_name)
             self._connections[project_name] = conn
             return conn

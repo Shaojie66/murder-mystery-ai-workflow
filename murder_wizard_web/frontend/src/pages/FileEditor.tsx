@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import Editor from '@monaco-editor/react'
 import ReactMarkdown from 'react-markdown'
 import { getFile, saveFile, listFiles } from '../api/files'
+
+// Lazy load Monaco — only loaded when user opens the file editor
+const Editor = lazy(() => import('@monaco-editor/react'))
 
 type ViewMode = 'edit' | 'preview'
 
@@ -238,25 +240,27 @@ export default function FileEditor() {
       {/* Editor / Preview */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
         {viewMode === 'edit' ? (
-          <Editor
-            height="100%"
-            language={isJson ? 'json' : 'markdown'}
-            value={content}
-            onChange={(v) => setContent(v || '')}
-            theme="vs-dark"
-            options={{
-              minimap: { enabled: false },
-              fontSize: 14,
-              fontFamily: "'JetBrains Mono', monospace",
-              lineNumbers: 'on',
-              wordWrap: 'on',
-              automaticLayout: true,
-              scrollBeyondLastLine: false,
-              padding: { top: 16, bottom: 16 },
-              renderLineHighlight: 'line',
-              scrollbar: { verticalScrollbarSize: 5 },
-            }}
-          />
+          <Suspense fallback={<div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)', fontFamily: "'Crimson Pro', serif", fontStyle: 'italic' }}>加载编辑器...</div>}>
+            <Editor
+              height="100%"
+              language={isJson ? 'json' : 'markdown'}
+              value={content}
+              onChange={(v) => setContent(v || '')}
+              theme="vs-dark"
+              options={{
+                minimap: { enabled: false },
+                fontSize: 14,
+                fontFamily: "'JetBrains Mono', monospace",
+                lineNumbers: 'on',
+                wordWrap: 'on',
+                automaticLayout: true,
+                scrollBeyondLastLine: false,
+                padding: { top: 16, bottom: 16 },
+                renderLineHighlight: 'line',
+                scrollbar: { verticalScrollbarSize: 5 },
+              }}
+            />
+          </Suspense>
         ) : (
           <div
             style={{

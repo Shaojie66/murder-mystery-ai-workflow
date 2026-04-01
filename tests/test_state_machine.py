@@ -7,7 +7,7 @@ class TestMurderWizardState:
     def test_default_initialization(self):
         state = MurderWizardState(project_name="test_project")
         assert state.project_name == "test_project"
-        assert state.story_type == "mechanic"
+        assert state.story_type == "emotion"
         assert state.current_stage == Stage.IDLE
         assert state.is_prototype == False
         assert state.outline is None

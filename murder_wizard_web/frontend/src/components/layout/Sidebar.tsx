@@ -134,6 +134,46 @@ export default function Sidebar({ onClose }: SidebarProps) {
           >
             项目列表
           </NavItem>
+
+          <NavItem
+            href="/settings"
+            isActive={location.pathname === '/settings'}
+            icon={
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="7" cy="7" r="2" />
+                <path d="M7 1v2M7 11v2M1 7h2M11 7h2M2.9 2.9l1.4 1.4M9.7 9.7l1.4 1.4M2.9 11.1l1.4-1.4M9.7 4.3l1.4-1.4" />
+              </svg>
+            }
+          >
+            设置
+          </NavItem>
+
+          <NavItem
+            href="/metrics"
+            isActive={location.pathname === '/metrics'}
+            icon={
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="1" y="1" width="12" height="12" rx="0.5" />
+                <line x1="4" y1="4" x2="4" y2="10" />
+                <line x1="7" y1="7" x2="7" y2="10" />
+                <line x1="10" y1="3" x2="10" y2="10" />
+              </svg>
+            }
+          >
+            落地页统计
+          </NavItem>
+
+          <NavItem
+            href="/subscription"
+            isActive={location.pathname === '/subscription'}
+            icon={
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M7 1L2 4v4c0 2.5 2.3 4.8 5 5.5 2.7-.7 5-3 5-5.5V4L7 1z" />
+              </svg>
+            }
+          >
+            订阅管理
+          </NavItem>
         </div>
 
         {/* Project section */}

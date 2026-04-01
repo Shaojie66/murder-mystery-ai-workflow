@@ -64,33 +64,45 @@ async def run_phase(project_name: str, stage: int, req: RunPhaseRequest):
         raise HTTPException(status_code=409, detail="A phase is already running for this project")
 
     async def event_generator():
-        queue: asyncio.Queue = asyncio.Queue()
+        # Create connection to get its queue
         conn = await sse_manager.create_connection(project_name)
-        runner = PhaseRunnerWeb(project_name, queue)
+        # Use the connection's queue for the runner so events flow correctly
+        runner = PhaseRunnerWeb(project_name, conn.queue)
+        task_result: BaseException | None = None
 
         async def run_and_emit():
+            nonlocal task_result
             try:
                 await runner.run_phase(stage, req.analyze)
+            except BaseException as e:
+                task_result = e
             finally:
                 await sse_manager.cancel_connection(project_name)
 
         task = asyncio.create_task(run_and_emit())
 
         try:
-            while True:
-                event = await asyncio.wait_for(queue.get(), timeout=60)
-                if event is None:
-                    yield {"event": "end", "data": {}}
-                    break
-                yield {"event": event["event"], "data": event["data"]}
-        except asyncio.TimeoutError:
-            yield {"event": "keepalive", "data": {}}
-        except Exception as e:
-            yield {"event": "error", "data": {"message": str(e)}}
-        finally:
+            # Stream events from the connection's queue
+            async for event in conn.event_stream():
+                yield event
+        except (asyncio.CancelledError, GeneratorExit):
             if not task.done():
                 runner.cancel()
                 task.cancel()
+        finally:
+            # Await task to avoid unobserved exception
+            if not task.done():
+                runner.cancel()
+                task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except BaseException as e:
+                if task_result is None:
+                    task_result = e
+            if task_result is not None:
+                yield {"event": "error", "data": {"message": str(task_result)}}
 
     return EventSourceResponse(event_generator())
 
@@ -104,33 +116,41 @@ async def run_expand(project_name: str):
         raise HTTPException(status_code=409, detail="An operation is already running for this project")
 
     async def event_generator():
-        queue: asyncio.Queue = asyncio.Queue()
-        await sse_manager.create_connection(project_name)
-        runner = PhaseRunnerWeb(project_name, queue)
+        conn = await sse_manager.create_connection(project_name)
+        runner = PhaseRunnerWeb(project_name, conn.queue)
+        task_result: BaseException | None = None
 
         async def run_and_emit():
+            nonlocal task_result
             try:
                 await runner.run_expand()
+            except BaseException as e:
+                task_result = e
             finally:
                 await sse_manager.cancel_connection(project_name)
 
         task = asyncio.create_task(run_and_emit())
 
         try:
-            while True:
-                event = await asyncio.wait_for(queue.get(), timeout=60)
-                if event is None:
-                    yield {"event": "end", "data": {}}
-                    break
-                yield {"event": event["event"], "data": event["data"]}
-        except asyncio.TimeoutError:
-            yield {"event": "keepalive", "data": {}}
-        except Exception as e:
-            yield {"event": "error", "data": {"message": str(e)}}
+            async for event in conn.event_stream():
+                yield event
+        except (asyncio.CancelledError, GeneratorExit):
+            if not task.done():
+                runner.cancel()
+                task.cancel()
         finally:
             if not task.done():
                 runner.cancel()
                 task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except BaseException as e:
+                if task_result is None:
+                    task_result = e
+            if task_result is not None:
+                yield {"event": "error", "data": {"message": str(task_result)}}
 
     return EventSourceResponse(event_generator())
 
@@ -144,33 +164,41 @@ async def run_audit(project_name: str):
         raise HTTPException(status_code=409, detail="An operation is already running for this project")
 
     async def event_generator():
-        queue: asyncio.Queue = asyncio.Queue()
-        await sse_manager.create_connection(project_name)
-        runner = PhaseRunnerWeb(project_name, queue)
+        conn = await sse_manager.create_connection(project_name)
+        runner = PhaseRunnerWeb(project_name, conn.queue)
+        task_result: BaseException | None = None
 
         async def run_and_emit():
+            nonlocal task_result
             try:
                 await runner.run_audit()
+            except BaseException as e:
+                task_result = e
             finally:
                 await sse_manager.cancel_connection(project_name)
 
         task = asyncio.create_task(run_and_emit())
 
         try:
-            while True:
-                event = await asyncio.wait_for(queue.get(), timeout=60)
-                if event is None:
-                    yield {"event": "end", "data": {}}
-                    break
-                yield {"event": event["event"], "data": event["data"]}
-        except asyncio.TimeoutError:
-            yield {"event": "keepalive", "data": {}}
-        except Exception as e:
-            yield {"event": "error", "data": {"message": str(e)}}
+            async for event in conn.event_stream():
+                yield event
+        except (asyncio.CancelledError, GeneratorExit):
+            if not task.done():
+                runner.cancel()
+                task.cancel()
         finally:
             if not task.done():
                 runner.cancel()
                 task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except BaseException as e:
+                if task_result is None:
+                    task_result = e
+            if task_result is not None:
+                yield {"event": "error", "data": {"message": str(task_result)}}
 
     return EventSourceResponse(event_generator())
 

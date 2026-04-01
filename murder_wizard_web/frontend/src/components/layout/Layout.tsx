@@ -14,6 +14,43 @@ export default function Layout() {
         background: 'var(--bg-base)',
       }}
     >
+      {/* Skip-to-content link */}
+      <a
+        href="#main-content"
+        style={{
+          position: 'absolute',
+          left: '-9999px',
+          top: 'auto',
+          width: '1px',
+          height: '1px',
+          overflow: 'hidden',
+          zIndex: 9999,
+        }}
+        onFocus={(e) => {
+          e.currentTarget.style.position = 'fixed'
+          e.currentTarget.style.left = '1rem'
+          e.currentTarget.style.top = '1rem'
+          e.currentTarget.style.width = 'auto'
+          e.currentTarget.style.height = 'auto'
+          e.currentTarget.style.padding = '0.5rem 1rem'
+          e.currentTarget.style.background = 'var(--accent-crimson)'
+          e.currentTarget.style.color = 'var(--text-cream)'
+          e.currentTarget.style.borderRadius = '4px'
+          e.currentTarget.style.fontFamily = "'Crimson Pro', serif"
+          e.currentTarget.style.fontSize = '14px'
+          e.currentTarget.style.textDecoration = 'none'
+          e.currentTarget.style.zIndex = '9999'
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.position = 'absolute'
+          e.currentTarget.style.left = '-9999px'
+          e.currentTarget.style.width = '1px'
+          e.currentTarget.style.height = '1px'
+        }}
+      >
+        跳到主要内容
+      </a>
+
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -75,7 +112,11 @@ export default function Layout() {
               lineHeight: 1,
             }}
           >
-            ☰
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
           </button>
           <span
             style={{
@@ -90,6 +131,7 @@ export default function Layout() {
         </div>
 
         <main
+          id="main-content"
           style={{
             flex: 1,
             overflowY: 'auto',

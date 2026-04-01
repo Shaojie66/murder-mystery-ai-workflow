@@ -4,42 +4,47 @@ import re
 import json
 from typing import Optional
 from pathlib import Path
+from io import StringIO
 
+from rich.console import Console
 from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
 from murder_wizard.wizard.truth_files import TruthFileManager
 
 
-class SSEConsole:
-    """Console replacement that emits SSE events to an asyncio.Queue."""
+class SSEConsole(Console):
+    """Rich Console replacement that emits SSE events to an asyncio.Queue.
 
-    def __init__(self, queue: asyncio.Queue):
+    Inherits from Console to properly support Rich's Progress/Live components,
+    but intercepts print() to emit SSE tokens instead of writing to stdout.
+    """
+
+    def __init__(self, queue: asyncio.Queue, *args, **kwargs):
+        # Initialize Console with a dummy file to avoid real stdout
+        super().__init__(file=StringIO(), *args, **kwargs)
         self._queue = queue
-        self._buffer = ""
-        self._get_time = __import__('time').time
 
     def get_time(self) -> float:
         """Return current time for Rich Progress compatibility."""
-        return self._get_time()
+        import time
+        return time.time()
 
-    def log(self, text: str, **kwargs) -> None:
-        """Rich log method - just print to avoid Rich-specific behavior."""
-        self.print(text, **kwargs)
+    def print(self, text: str | object = "", **kwargs) -> None:
+        """Intercept print to emit as SSE token, not write to actual console."""
+        # Convert to string and strip markup
+        if hasattr(text, '__rich_console__'):
+            # It's a Rich renderable - render it
+            from rich.console import RenderResult
+            from io import StringIO
+            with StringIO() as f:
+                console = Console(file=f, force_terminal=False)
+                console.print(text)
+                clean = f.getvalue()
+        else:
+            clean = self._strip_rich(str(text))
 
-    def set_live(self, *args, **kwargs) -> None:
-        """Rich set_live - no-op for SSE console."""
-        pass
-
-    def clear_live(self, *args, **kwargs) -> None:
-        """Rich clear_live - no-op for SSE console."""
-        pass
-
-    def print(self, text: str, **kwargs) -> None:
-        """Strip Rich markup and send as token event."""
-        # Remove Rich markup: [color], [/color], bold markers, etc.
-        clean = self._strip_rich(text)
-        if clean:
-            self._queue.put_nowait({"event": "token", "data": {"content": clean, "delta": True}})
+        if clean and clean.strip():
+            self._queue.put_nowait({"event": "token", "data": {"content": clean.strip(), "delta": True}})
 
     def _strip_rich(self, text: str) -> str:
         """Remove Rich ANSI/style markup from text."""
@@ -136,12 +141,16 @@ class PhaseRunnerWeb:
         runner = PhaseRunner(self.session, state, self.sse_console)
 
         # Monkey-patch the _call_llm to intercept cost events
+        # Note: _call_llm is synchronous, so we must NOT make this async
         original_call_llm = runner._call_llm
 
-        async def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
-            result = await original_call_llm(prompt, system, operation)
+        def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
+            result = original_call_llm(prompt, system, operation)
             if result:
-                self._emit_cost(result.tokens_used, result.cost)
+                # Emit cost synchronously via queue
+                self._total_cost += result.cost
+                self._total_tokens += result.tokens_used
+                self.emit("cost", {"tokens": result.tokens_used, "cost": result.cost, "total_cost": self._total_cost})
             return result
 
         runner._call_llm = patched_call_llm
@@ -202,10 +211,12 @@ class PhaseRunnerWeb:
         # Monkey-patch _call_llm to track costs
         original_call_llm = runner._call_llm
 
-        async def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
-            result = await original_call_llm(prompt, system, operation)
+        def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
+            result = original_call_llm(prompt, system, operation)
             if result:
-                self._emit_cost(result.tokens_used, result.cost)
+                self._total_cost += result.cost
+                self._total_tokens += result.tokens_used
+                self.emit("cost", {"tokens": result.tokens_used, "cost": result.cost, "total_cost": self._total_cost})
             return result
 
         runner._call_llm = patched_call_llm
@@ -235,10 +246,12 @@ class PhaseRunnerWeb:
 
         original_call_llm = runner._call_llm
 
-        async def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
-            result = await original_call_llm(prompt, system, operation)
+        def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
+            result = original_call_llm(prompt, system, operation)
             if result:
-                self._emit_cost(result.tokens_used, result.cost)
+                self._total_cost += result.cost
+                self._total_tokens += result.tokens_used
+                self.emit("cost", {"tokens": result.tokens_used, "cost": result.cost, "total_cost": self._total_cost})
             return result
 
         runner._call_llm = patched_call_llm

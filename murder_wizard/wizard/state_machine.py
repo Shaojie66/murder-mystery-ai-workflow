@@ -50,7 +50,7 @@ class Stage(IntEnum):
 class MurderWizardState:
     """Wizard 状态"""
     project_name: str
-    story_type: str = "mechanic"  # emotion, mechanic, puzzle
+    story_type: str = "emotion"  # emotion, reasoning, fun, horror, mechanic
     current_stage: Stage = Stage.IDLE
 
     # 阶段产物
