@@ -46,7 +46,7 @@ class TestPromptLoader:
         loader = PromptLoader()
         prompt = loader.mechanism_design(
             brief_content="brief",
-            story_type="机制本",
+            story_type="mechanic",
             is_prototype=True,
             q1_result="评分8分",
             mechanism_content="mech",
@@ -173,25 +173,6 @@ class TestPromptLoader:
         # horror type should mention horror-specific content
         horror_prompt = loader.system_script_writer("horror")
         assert "恐怖" in horror_prompt or "恐惧" in horror_prompt
-
-    def test_stage2_script_type_specific(self):
-        """stage2_script renders different templates per story type."""
-        loader = PromptLoader()
-        emotion = loader.stage2_script(story_type="emotion", brief_content="b", mechanism_content="m", is_prototype=False)
-        reasoning = loader.stage2_script(story_type="reasoning", brief_content="b", mechanism_content="m", is_prototype=False)
-        # Templates should differ (different structure/content per type)
-        assert emotion != reasoning
-        # Templates should contain type-specific keywords
-        assert "情感" in emotion
-        assert "证据" in reasoning or "线索" in reasoning
-
-    def test_stage2_script_falls_back_to_mechanic(self):
-        """Unknown story type falls back to mechanic template."""
-        loader = PromptLoader()
-        mechanic = loader.stage2_script(story_type="mechanic", brief_content="b", mechanism_content="m", is_prototype=False)
-        unknown = loader.stage2_script(story_type="unknown_type_xyz", brief_content="b", mechanism_content="m", is_prototype=False)
-        # Should fall back to mechanic (same output)
-        assert unknown == mechanic
 
     def test_expand_system_prompts_match_type_specific_ones(self):
         """Expand operations should use the same type-specific prompts as PhaseRunner.

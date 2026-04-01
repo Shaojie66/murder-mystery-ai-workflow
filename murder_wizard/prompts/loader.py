@@ -326,8 +326,24 @@ class PromptLoader:
 - 有喘息空间但不破坏整体恐怖感
 - 结局有余味，走出房间后还感到意犹未尽"""
 
+    def system_mechanism_designer(self, story_type: str = "mechanic") -> str:
+        """获取类型化的机制设计系统提示词.
+
+        Args:
+            story_type: 故事类型 (emotion/reasoning/fun/horror/mechanic)
+        """
+        dispatch_map = {
+            "emotion": self.system_emotion_designer,
+            "reasoning": self.system_reasoning_designer,
+            "fun": self.system_fun_designer,
+            "horror": self.system_horror_designer,
+            "mechanic": self.system_mechanic_designer,
+        }
+        method = dispatch_map.get(story_type, self.system_mechanic_designer)
+        return method()
+
     @staticmethod
-    def system_mechanism_designer() -> str:
+    def system_mechanic_designer() -> str:
         return """你是一个专业的剧本杀机制设计师。
 
 擅长设计：
@@ -343,8 +359,92 @@ class PromptLoader:
 - 线索有层次感（表面线索、深层线索、关键线索）
 - 有记忆点（让人印象深刻的机制）"""
 
+    def system_script_writer(self, story_type: str = "mechanic") -> str:
+        """获取类型化的剧本写作系统提示词.
+
+        Args:
+            story_type: 故事类型 (emotion/reasoning/fun/horror/mechanic)
+        """
+        dispatch_map = {
+            "emotion": self.system_script_writer_emotion,
+            "reasoning": self.system_script_writer_reasoning,
+            "fun": self.system_script_writer_fun,
+            "horror": self.system_script_writer_horror,
+            "mechanic": self.system_script_writer_mechanic,
+        }
+        method = dispatch_map.get(story_type, self.system_script_writer_mechanic)
+        return method()
+
     @staticmethod
-    def system_script_writer() -> str:
+    def system_script_writer_emotion() -> str:
+        return """你是一个专业的剧本杀情感本作家。
+
+擅长设计：
+1. 角色情感弧线和成长轨迹
+2. 人物关系网络和关系动态
+3. 沉浸式情感体验和情感高潮
+4. 情感抉择的两难性
+5. 角色心理弱点和情感共鸣点
+
+你写作的情感本要：
+- 每个角色都有可共鸣的情感伤口
+- 人物关系本身是游戏机制
+- 玩家能在游戏中产生真实的情感波动
+- 有让人印象深刻的情感高光时刻"""
+
+    @staticmethod
+    def system_script_writer_reasoning() -> str:
+        return """你是一个专业的剧本杀推理本作家。
+
+擅长设计：
+1. 线索链和逻辑推理
+2. 公平性和信息可及性
+3. 悬念铺垫和逐步揭露
+4. 角色行为动机的合理性
+5. 结局的唯一解和成就感
+
+你写作的推理本要：
+- 线索链形成唯一闭合解
+- 信息对所有玩家基本对等
+- 有足够的干扰项和误导
+- 破解真相时有强烈的成就感"""
+
+    @staticmethod
+    def system_script_writer_fun() -> str:
+        return """你是一个专业的剧本杀欢乐本作家。
+
+擅长设计：
+1. 喜剧人设和笑点设计
+2. 社交互动和碰撞机制
+3. 反转和意外
+4. 阵营对抗和社交博弈
+5. 轻松愉快的游戏氛围
+
+你写作的欢乐本要：
+- 每个角色本身就是喜剧担当
+- 有足够的社交碰撞点
+- 玩家能主动创造笑点
+- 结局让玩家笑着离开"""
+
+    @staticmethod
+    def system_script_writer_horror() -> str:
+        return """你是一个专业的剧本杀恐怖本作家。
+
+擅长设计：
+1. 恐怖氛围和心理压迫
+2. 悬念营造和未知恐惧
+3. 渐进式恐惧升级
+4. 角色心理弱点
+5. 真相揭露的情感冲击
+
+你写作的恐怖本要：
+- 氛围即产品，不是靠jump scare
+- 想象力比实际更可怕
+- 有喘息空间但不破坏整体恐怖感
+- 结局有余味，走出房间后还感到意犹未尽"""
+
+    @staticmethod
+    def system_script_writer_mechanic() -> str:
         return """你是一个专业的剧本杀作家，擅长设计复杂、严谨的角色关系和事件逻辑。"""
 
     @staticmethod
