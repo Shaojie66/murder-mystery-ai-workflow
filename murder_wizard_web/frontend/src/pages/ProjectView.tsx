@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getProject } from '../api/projects'
+import { getFile } from '../api/files'
 import { useProjectStore } from '../stores/projectStore'
 import type { ProjectDetails } from '../types/api'
+import VisualGallery from '../components/visual/VisualGallery'
 
 const STAGE_LABELS: Record<string, { label: string; next: number | null }> = {
   idle: { label: '未开始', next: 1 },
@@ -24,6 +26,7 @@ export default function ProjectView() {
   const [project, setProject] = useState<ProjectDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [imagePrompts, setImagePrompts] = useState<string | null>(null)
 
   useEffect(() => {
     if (!name) return
@@ -32,6 +35,11 @@ export default function ProjectView() {
       .then((p) => { setProject(p); setCurrentProject(p) })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : '加载失败'))
       .finally(() => setLoading(false))
+
+    // Fetch image-prompts.md if it exists
+    getFile(decodeURIComponent(name), 'image-prompts.md')
+      .then((f) => setImagePrompts(f.content))
+      .catch(() => setImagePrompts(null))
   }, [name])
 
   if (loading) {
@@ -433,6 +441,13 @@ export default function ProjectView() {
             )}
           </section>
         </div>
+
+        {/* Visual Gallery - only show when phase >= 3 */}
+        {currentPhaseNum >= 3 && (
+          <section style={{ marginTop: '2rem' }}>
+            <VisualGallery projectName={project.name} prompts={imagePrompts || undefined} />
+          </section>
+        )}
       </div>
     </div>
   )

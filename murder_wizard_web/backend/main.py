@@ -9,7 +9,7 @@ sys.path.insert(0, str(_backend_dir))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import projects, phases, files, matrix, costs, audit, pdf
+from api import projects, phases, files, matrix, costs, audit, pdf, assets
 
 app = FastAPI(title="Murder Wizard Web API", version="0.6.0")
 
@@ -30,6 +30,7 @@ app.include_router(matrix.router)
 app.include_router(costs.router)
 app.include_router(audit.router)
 app.include_router(pdf.router)
+app.include_router(assets.router)
 
 
 @app.get("/api/health")
