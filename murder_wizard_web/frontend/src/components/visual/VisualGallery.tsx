@@ -2,11 +2,10 @@ import { useState } from 'react'
 import { generateImage } from '../../api/assets'
 
 interface VisualGalleryProps {
-  projectName: string
   prompts?: string // image prompts from image-prompts.md
 }
 
-export default function VisualGallery({ projectName, prompts }: VisualGalleryProps) {
+export default function VisualGallery({ prompts }: VisualGalleryProps) {
   const [generating, setGenerating] = useState(false)
   const [generatedImages, setGeneratedImages] = useState<Array<{ url: string; prompt: string }>>([])
   const [error, setError] = useState<string | null>(null)

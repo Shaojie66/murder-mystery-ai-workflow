@@ -445,7 +445,7 @@ export default function ProjectView() {
         {/* Visual Gallery - only show when phase >= 3 */}
         {currentPhaseNum >= 3 && (
           <section style={{ marginTop: '2rem' }}>
-            <VisualGallery projectName={project.name} prompts={imagePrompts || undefined} />
+            <VisualGallery prompts={imagePrompts || undefined} />
           </section>
         )}
       </div>
