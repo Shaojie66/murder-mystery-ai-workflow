@@ -427,7 +427,7 @@ class PhaseRunner:
                 phase1_prompt = self._build_expand_phase1_prompt(outline, mechanism, characters)
                 phase1_response = self._call_llm(
                     phase1_prompt,
-                    system="你是一个专业的剧本杀作家，擅长将简化原型扩写为完整剧本。",
+                    system=self._loader.system_mechanism_designer(self.state.story_type),
                     operation="expand_phase1"
                 )
 
@@ -440,7 +440,7 @@ class PhaseRunner:
             new_chars_prompt = self._build_new_chars_prompt(phase1_response.content)
             new_chars_response = self._call_llm(
                 new_chars_prompt,
-                system="你是一个专业的剧本杀作家，擅长从扩写内容中提取角色设定。",
+                system=self._loader.system_script_writer(self.state.story_type),
                 operation="expand_parse_chars"
             )
 
@@ -470,7 +470,7 @@ class PhaseRunner:
                 prompt = self._build_single_char_prompt(o, m, p1, name)
                 return self._call_llm(
                     prompt,
-                    system="你是一个专业的剧本杀作家，每位角色的剧本都要符合其身份、背景和视角。",
+                    system=self._loader.system_script_writer(self.state.story_type),
                     operation=f"expand_char_{name}"
                 )
 
@@ -663,7 +663,7 @@ Phase 1 扩写内容：
 """
             response = self._call_llm(
                 single_prompt,
-                system="你是一个专业的剧本杀作家，擅长将简化原型扩写为完整剧本。",
+                system=self._loader.system_mechanism_designer(self.state.story_type),
                 operation="expand_single"
             )
 

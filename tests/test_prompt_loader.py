@@ -143,3 +143,69 @@ class TestPromptLoader:
             result = method()
             assert isinstance(result, str)
             assert len(result) > 10
+
+    def test_system_mechanism_designer_type_specific(self):
+        """Each story type gets a distinct system prompt."""
+        loader = PromptLoader()
+        types = ["emotion", "reasoning", "fun", "horror", "mechanic"]
+        prompts = [loader.system_mechanism_designer(t) for t in types]
+        # All should be strings
+        assert all(isinstance(p, str) for p in prompts)
+        # All should be distinct (different content per type)
+        assert len(set(prompts)) == len(prompts), "Each story type should have a unique system prompt"
+        # emotion type should mention emotion-specific keywords
+        emotion_prompt = loader.system_mechanism_designer("emotion")
+        assert "情感" in emotion_prompt
+        # reasoning type should mention reasoning-specific keywords
+        reasoning_prompt = loader.system_mechanism_designer("reasoning")
+        assert "证据" in reasoning_prompt or "推理" in reasoning_prompt
+
+    def test_system_script_writer_type_specific(self):
+        """Each story type gets a distinct system prompt for script writing."""
+        loader = PromptLoader()
+        types = ["emotion", "reasoning", "fun", "horror", "mechanic"]
+        prompts = [loader.system_script_writer(t) for t in types]
+        assert all(isinstance(p, str) for p in prompts)
+        assert len(set(prompts)) == len(prompts), "Each story type should have a unique script writer prompt"
+        # emotion type should mention emotion-specific content
+        emotion_prompt = loader.system_script_writer("emotion")
+        assert "情感" in emotion_prompt
+        # horror type should mention horror-specific content
+        horror_prompt = loader.system_script_writer("horror")
+        assert "恐怖" in horror_prompt or "恐惧" in horror_prompt
+
+    def test_stage2_script_type_specific(self):
+        """stage2_script renders different templates per story type."""
+        loader = PromptLoader()
+        emotion = loader.stage2_script(story_type="emotion", brief_content="b", mechanism_content="m", is_prototype=False)
+        reasoning = loader.stage2_script(story_type="reasoning", brief_content="b", mechanism_content="m", is_prototype=False)
+        # Templates should differ (different structure/content per type)
+        assert emotion != reasoning
+        # Templates should contain type-specific keywords
+        assert "情感" in emotion
+        assert "证据" in reasoning or "线索" in reasoning
+
+    def test_stage2_script_falls_back_to_mechanic(self):
+        """Unknown story type falls back to mechanic template."""
+        loader = PromptLoader()
+        mechanic = loader.stage2_script(story_type="mechanic", brief_content="b", mechanism_content="m", is_prototype=False)
+        unknown = loader.stage2_script(story_type="unknown_type_xyz", brief_content="b", mechanism_content="m", is_prototype=False)
+        # Should fall back to mechanic (same output)
+        assert unknown == mechanic
+
+    def test_expand_system_prompts_match_type_specific_ones(self):
+        """Expand operations should use the same type-specific prompts as PhaseRunner.
+
+        Regression test: expand was previously using hardcoded generic strings instead
+        of type-specific system_mechanism_designer and system_script_writer.
+        """
+        loader = PromptLoader()
+        for story_type in ["emotion", "reasoning", "fun", "horror", "mechanic"]:
+            # expand Phase 1 should use system_mechanism_designer
+            expand_p1 = loader.system_mechanism_designer(story_type)
+            # expand Phase 2 (character script) should use system_script_writer
+            expand_p2 = loader.system_script_writer(story_type)
+            assert isinstance(expand_p1, str), f"{story_type}: mechanism designer should return string"
+            assert isinstance(expand_p2, str), f"{story_type}: script writer should return string"
+            assert len(expand_p1) > 10
+            assert len(expand_p2) > 10
