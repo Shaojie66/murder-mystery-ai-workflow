@@ -303,5 +303,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - 修复问题
 
 ### Security
-- 安全相关
-```
+- JWT SECRET_KEY 从环境变量加载，开发模式使用不安全默认值并发出警告
+- CORS 从 `allow_origins=["*"]` 改为基于 `ALLOWED_ORIGINS` 环境变量（默认 localhost）
+- 所有 API 端点增加 project_name 路径遍历保护（`..`, `/`, `\`, 空值检查）
+- 阶段跳过逻辑：阶段2现在检查所有6个产物文件而非仅一个
+
+### Added
+- Web 端审计支持 `?force=true` 绕过 P0 blockers（CLI 一致性）
+- 前端审计执行页增加"强制推进（忽略 P0）" Toggle
+- `audit --force` 时打印最多9条 P0 问题描述（来自审计表格）
+- 阶段1 Q1/Q2/Q3 三步 pipeline（概念验证→核心设计→平衡性验证）
