@@ -22,9 +22,71 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `get_quality_report()`：质量报告生成
 - 会话状态持久化：`story_type` 现在会保存到 session 文件
 
+#### murder_wizard_web — Web 前端（React + Vite + Tailwind）
+- `murder_wizard_web/frontend/`：完整的 React + TypeScript 前端
+- 落地页 A/B 测试（`/landing`、`/landing-a`、`/landing-b`）
+  - LandingA：深色技术向风格，Terminal Mockup
+  - LandingB：浅色引导式风格，三步流程图
+  - `OnboardingModal`：邮箱提交后引导注册/登录
+- 完整的 Web 仪表盘（10个页面）
+  - Dashboard：项目列表 + 创建弹窗
+  - ProjectView：8阶段进度条 + 产物文件列表
+  - PhaseExecution：SSE流式执行 + 进度条 + 成本统计
+  - MatrixEditor：信息矩阵可视化表格 + 单元格编辑弹窗
+  - FileEditor：Monaco编辑器 + Markdown预览
+  - AuditView：穿帮审计报告展示
+  - CostPage：API消耗统计
+  - Settings：LLM / Notion / Obsidian 配置 + 测试连接
+  - Subscription：订阅管理 + Pro升级CTA
+- 事件追踪系统（`useAnalytics.ts` hook）
+  - 支持 Plausible Analytics 集成
+  - 全局 `page_view` / `scroll_50` / `scroll_100` / `modal_open` / `email_submit` 事件
+  - 同时发送至 `/api/analytics/track`（自建后端）
+- `pages/Metrics.tsx`：落地页统计仪表盘（转化率对比、访客分布、事件漏斗）
+- Plausible 集成占位符（`index.html`），可快速启用云端统计
+
+#### murder_wizard_web — Web 后端（FastAPI）
+- `api/landing.py`：落地页邮箱订阅 API（`/api/landing/subscribe`）
+- `api/settings.py`：LLM/Notion/Obsidian 配置 API
+- `api/analytics.py`：落地页统计 API（`/api/analytics/track`、`/api/analytics/events`、`/api/analytics/summary`）
+- 落地页邮箱存储（内存，生产环境需换数据库）
+- analytics API 端点（内存存储，开发环境使用）
+
+#### 产品探索文档
+- `discovery_plan.md`：完整探索计划（6个验证实验）
+- `PRD-murder-wizard-Pro.md`：Pro版本完整PRD
+- `interview_script.md`：用户访谈脚本 + 记录表
+- `recruitment_plan.md`：访谈招募计划与渠道策略
+- `metrics_plan.md`：A/B测试指标体系
+
+### Changed
+
+- `README.md`：新增 Web 版说明、落地页路由、Pro版本对比表、环境变量说明
+- `CLAUDE.md`：新增 murder_wizard_web 目录结构、Web 路由表、Design Tokens
+
 ### Fixed
 
 - `story_type` 现在正确持久化到 `murder-wizard-session.json`
+
+#### SSE 流式传输
+- `sse_manager.py`：取消 sentinel 检查时机错误导致 `KeyError`（在 yield 前检查而非后）
+- `sse_manager.py`：keepalive 格式错误（dict → SSE comment string）
+- `phases.py`：后台任务异常被静默吞掉，修复为捕获并向客户端发送 error 事件
+- `session.py`：损坏的 session.json 触发 `ValueError` 而非 `JSONDecodeError`
+
+#### LLM Client
+- `llm/client.py`：`http_headers` 参数不存在，修复为 `default_headers`（OpenAI SDK）
+
+#### 前端 Accessibility
+- `Dashboard.tsx`：删除按钮键盘不可访问（`visibility:hidden` → `opacity:0;pointer-events:none`）
+- `LandingB.tsx`：浅色主题页面 h1/h2 被全局 CSS 覆盖，添加 inline style 修复
+- `OnboardingModal.tsx`：重新打开 modal 状态残留，添加 `useEffect(isOpen)` 重置
+- `Layout.tsx`：缺失跳过内容链接，添加 skip-to-content
+- `useAnalytics.ts`：重复触发 `page_view`，添加 `pageViewFired` ref guard
+- `Settings.tsx`：表单缺少 label 和 role="alert"
+- `Dashboard.tsx`：加载状态缺少 `aria-busy`
+- `Metrics.tsx`/`CostPage.tsx`：Recharts 未懒加载
+- `FileEditor.tsx`：Monaco Editor 未懒加载
 
 ---
 
