@@ -10,6 +10,13 @@ from core.phase_runner_web import PhaseRunnerWeb
 router = APIRouter(prefix="/api/projects/{project_name}", tags=["phases"])
 
 
+def _validate_project_name(name: str) -> None:
+    if not name or name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid project name")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Project name cannot contain path separators or '..'")
+
+
 class RunPhaseRequest(BaseModel):
     analyze: bool = False
 
@@ -17,6 +24,7 @@ class RunPhaseRequest(BaseModel):
 @router.get("/phases/{stage}/status")
 async def phase_status(project_name: str, stage: int):
     """Check if a phase is currently running."""
+    _validate_project_name(project_name)
     return {"running": sse_manager.is_running(project_name)}
 
 
@@ -58,6 +66,7 @@ async def phase_event_generator(project_name: str, stage: int, analyze: bool):
 @router.post("/phases/{stage}/run")
 async def run_phase(project_name: str, stage: int, req: RunPhaseRequest):
     """Run a phase with SSE streaming output."""
+    _validate_project_name(project_name)
     from murder_wizard.core.sse_manager import sse_manager
 
     if sse_manager.is_running(project_name):
@@ -110,6 +119,7 @@ async def run_phase(project_name: str, stage: int, req: RunPhaseRequest):
 @router.post("/expand")
 async def run_expand(project_name: str):
     """Run prototype expansion with SSE streaming."""
+    _validate_project_name(project_name)
     from murder_wizard.core.sse_manager import sse_manager
 
     if sse_manager.is_running(project_name):
@@ -158,6 +168,7 @@ async def run_expand(project_name: str):
 @router.post("/audit")
 async def run_audit(project_name: str):
     """Run full audit with SSE streaming."""
+    _validate_project_name(project_name)
     from murder_wizard.core.sse_manager import sse_manager
 
     if sse_manager.is_running(project_name):
@@ -206,6 +217,7 @@ async def run_audit(project_name: str):
 @router.post("/phases/{stage}/cancel")
 async def cancel_phase(project_name: str, stage: int):
     """Cancel a running phase."""
+    _validate_project_name(project_name)
     from murder_wizard.core.sse_manager import sse_manager
     await sse_manager.cancel_connection(project_name)
     return {"cancelled": True}

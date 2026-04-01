@@ -8,9 +8,17 @@ router = APIRouter(prefix="/api/projects/{project_name}/costs", tags=["costs"])
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 
 
+def _validate_project_name(name: str) -> None:
+    if not name or name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid project name")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Project name cannot contain path separators or '..'")
+
+
 @router.get("")
 async def get_costs(project_name: str):
     """Get cost breakdown for a project."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -77,6 +85,7 @@ async def get_costs(project_name: str):
 @router.get("/summary")
 async def get_cost_summary(project_name: str):
     """Lightweight cost summary for project cards."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")

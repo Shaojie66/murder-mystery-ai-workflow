@@ -87,26 +87,49 @@ class SessionManager:
         return [p.name for p in self.base_path.iterdir() if p.is_dir()]
 
     def recover_from_files(self) -> Optional[MurderWizardState]:
-        """从输出文件重建状态（session.json 损坏时）"""
-        # 检查是否存在输出文件
-        outline_file = self.project_path / "outline.md"
-        characters_file = self.project_path / "characters.md"
-        plot_file = self.project_path / "plot.md"
+        """从输出文件重建状态（session.json 损坏时）。
 
-        if not any(f.exists() for f in [outline_file, characters_file, plot_file]):
-            return None
+        按优先级从高到低检查所有 8 阶段工件，以最高阶段的已有文件为准。
+        """
+        # 按优先级排序：越高阶段的工件越能说明进度
+        stage_artifacts = [
+            (Stage.STAGE_8_COMMUNITY, "community_plan.md"),
+            (Stage.STAGE_7_PROMO, "promo_content.md"),
+            (Stage.STAGE_6_PRINT, "script.pdf"),
+            (Stage.STAGE_5_COMMERCIAL, "commercial.md"),
+            (Stage.STAGE_4_TEST, "test_guide.md"),
+            (Stage.STAGE_3_VISUAL, "image-prompts.md"),
+            (Stage.STAGE_2_SCRIPT, "characters.md"),
+            (Stage.STAGE_1_MECHANISM, "mechanism.md"),
+        ]
 
-        # 重建状态
+        found_stage: Stage | None = None
+        for stage, artifact_name in stage_artifacts:
+            if (self.project_path / artifact_name).exists():
+                found_stage = stage
+                break
+
+        if found_stage is None:
+            # 回退到旧的 legacy 文件名（兼容旧项目）
+            outline_file = self.project_path / "outline.md"
+            characters_file = self.project_path / "characters.md"
+            plot_file = self.project_path / "plot.md"
+            if not any(f.exists() for f in [outline_file, characters_file, plot_file]):
+                return None
+            if plot_file.exists():
+                found_stage = Stage.PLOT_BUILD
+            elif characters_file.exists():
+                found_stage = Stage.CHARACTER_DESIGN
+            else:
+                found_stage = Stage.STORY_BRIEF
+
         state = MurderWizardState(project_name=self.project_name)
+        state.current_stage = found_stage
 
-        if outline_file.exists():
-            state.outline = outline_file.read_text(encoding="utf-8")
-            state.current_stage = Stage.STORY_BRIEF
-
-        if characters_file.exists():
-            state.current_stage = Stage.CHARACTER_DESIGN
-
-        if plot_file.exists():
-            state.current_stage = Stage.PLOT_BUILD
+        # 回退：legacy outline 文件
+        if found_stage is None or found_stage in (Stage.STORY_BRIEF, Stage.CHARACTER_DESIGN, Stage.PLOT_BUILD):
+            outline_file = self.project_path / "outline.md"
+            if outline_file.exists():
+                state.outline = outline_file.read_text(encoding="utf-8")
 
         return state

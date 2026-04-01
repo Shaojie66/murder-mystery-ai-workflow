@@ -106,7 +106,8 @@ def cache(project_name: str, clear: bool):
 
 @main.command()
 @click.argument("project_name")
-def audit(project_name: str):
+@click.option("--force", is_flag=True, help="强制推进流程，忽略未解决的 P0 穿帮问题")
+def audit(project_name: str, force: bool):
     """完整穿帮审计：深度分析角色剧本、信息矩阵、机制设计
 
     基于信息矩阵逐格核对，检查：
@@ -118,10 +119,11 @@ def audit(project_name: str):
 
     示例：
       murder-wizard audit myproject
+      murder-wizard audit myproject --force  # 强制推进，忽略已知 P0
     """
     from murder_wizard.cli.commands import run_audit
     session = SessionManager(project_name)
-    run_audit(session, console)
+    run_audit(session, console, force=force)
 
 
 if __name__ == "__main__":

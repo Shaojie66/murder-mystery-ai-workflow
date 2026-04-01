@@ -9,6 +9,13 @@ router = APIRouter(prefix="/api/projects/{project_name}/pdf", tags=["pdf"])
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 
 
+def _validate_project_name(name: str) -> None:
+    if not name or name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid project name")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Project name cannot contain path separators or '..'")
+
+
 class GeneratePDFRequest(BaseModel):
     type: str = "script"  # "script" or "clue_cards"
 
@@ -16,6 +23,7 @@ class GeneratePDFRequest(BaseModel):
 @router.post("/generate")
 async def generate_pdf(project_name: str, req: GeneratePDFRequest):
     """Generate PDF from current characters.md."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -44,6 +52,7 @@ async def generate_pdf(project_name: str, req: GeneratePDFRequest):
 @router.get("/status")
 async def get_print_status(project_name: str):
     """Check print readiness."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -82,6 +91,7 @@ async def get_print_status(project_name: str):
 @router.get("/script.pdf")
 async def get_script_pdf(project_name: str):
     """Download script.pdf."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")

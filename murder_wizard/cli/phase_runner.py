@@ -64,7 +64,7 @@ class PhaseRunner:
             raise
 
     def run_stage_1(self) -> bool:
-        """阶段1：类型化设计
+        """阶段1：类型化设计 — Q1验证 → Q2设计 → Q3验证 三步 pipeline
 
         原型模式：只生成3条核心事件（而非5-7条）
         根据 story_type 自动选择对应的设计模板和系统 prompt。
@@ -90,70 +90,152 @@ class PhaseRunner:
             self.console.print("[green]阶段1已完成，跳过[/green]")
             return True
 
-        prompt = self._build_stage1_prompt()
+        is_prototype = self.state.is_prototype
+        event_count = 3 if is_prototype else 7
+        char_count = 2 if is_prototype else 6
         system = self._loader.system_stage1_designer(story_type)
+        total_cost = 0.0
 
         try:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                console=self.console,
-            ) as progress:
-                task = progress.add_task(f"生成{type_label}...", total=None)
-                response = self._call_llm(prompt, system, "stage_1_mechanism")
+            # ── Q1：概念/情感/欢乐/恐怖定位验证 ────────────────────────
+            self.console.print("[cyan]Q1：概念验证...[/cyan]")
+            q1_vars = {
+                "brief_content": self.state.outline or "",
+                "story_type": story_type,
+                "is_prototype": is_prototype,
+                "char_count": char_count,
+                "event_count": event_count,
+            }
+            q1_prompt = self._loader.stage1_q1_validation(**q1_vars)
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("Q1 概念验证...", total=None)
+                q1_response = self._call_llm(q1_prompt, system, "stage_1_q1_validation")
+            total_cost += q1_response.cost
+            q1_file = self.session.project_path / "stage1_q1_validation.md"
+            q1_file.write_text(q1_response.content, encoding="utf-8")
+            self.console.print(f"[green]Q1 完成（{len(q1_response.content)} chars）[/green]")
 
-            # 保存产物
+            # ── Q2：核心机制/情感/角色设计 ─────────────────────────────
+            self.console.print(f"[cyan]Q2：核心{type_label}...[/cyan]")
+            q2_vars = {
+                "brief_content": self.state.outline or "",
+                "story_type": story_type,
+                "is_prototype": is_prototype,
+                "char_count": char_count,
+                "event_count": event_count,
+                "q1_result": q1_response.content,  # Q1 结果注入 Q2
+            }
+            q2_prompt = self._loader.stage1_q2_design(**q2_vars)
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task(f"Q2 {type_label}...", total=None)
+                q2_response = self._call_llm(q2_prompt, system, "stage_1_mechanism")
+            total_cost += q2_response.cost
+
+            # ── Q3：平衡性/一致性验证 ──────────────────────────────────
+            self.console.print("[cyan]Q3：平衡性验证...[/cyan]")
+            q3_vars = {
+                "brief_content": self.state.outline or "",
+                "story_type": story_type,
+                "is_prototype": is_prototype,
+                "char_count": char_count,
+                "event_count": event_count,
+                "mechanism_content": q2_response.content,  # Q2 结果注入 Q3
+            }
+            q3_prompt = self._loader.stage1_q3_validation(**q3_vars)
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("Q3 平衡性验证...", total=None)
+                q3_response = self._call_llm(q3_prompt, system, "stage_1_q3_validation")
+            total_cost += q3_response.cost
+            q3_file = self.session.project_path / "stage1_q3_validation.md"
+            q3_file.write_text(q3_response.content, encoding="utf-8")
+            self.console.print(f"[green]Q3 完成（{len(q3_response.content)} chars）[/green]")
+
+            # ── 保存产物：Q2 输出作为 mechanism.md ───────────────────
             mechanism_file = self.session.project_path / "mechanism.md"
-            mechanism_file.write_text(response.content, encoding="utf-8")
+            mechanism_file.write_text(q2_response.content, encoding="utf-8")
+
+            # 保存完整记录（Q1+Q2+Q3）
+            full_record = f"# {type_label} — 完整设计记录\n\n## Q1 概念验证\n\n{q1_response.content}\n\n---\n\n## Q2 核心设计\n\n{q2_response.content}\n\n---\n\n## Q3 平衡性验证\n\n{q3_response.content}\n"
+            full_file = self.session.project_path / "stage1_full_design.md"
+            full_file.write_text(full_record, encoding="utf-8")
 
             self.state.current_stage = Stage.STAGE_1_MECHANISM
             self.session.save(self.state)
 
-            self.console.print(f"[green]{type_label}已保存到：{mechanism_file}[/green]")
-            self._show_cost_warning(response.cost)
+            self.console.print(f"[green]阶段1全部完成！总消耗：${total_cost:.4f}[/green]")
+            self.console.print(f"[green]核心设计：{mechanism_file}[/green]")
+            self.console.print(f"[green]完整记录：{full_file}[/green]")
+            self._show_cost_warning(total_cost)
             return True
 
         except Exception as e:
             self.console.print(f"[red]阶段1失败：{e}[/red]")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _build_stage1_prompt(self) -> str:
-        """构建阶段1 prompt（类型化设计）"""
+        """构建阶段1 Q2 prompt（用于 backward compat）"""
         is_prototype = self.state.is_prototype
         event_count = 3 if is_prototype else 7
         char_count = 2 if is_prototype else 6
 
-        return self._loader.stage1_design(
+        return self._loader.stage1_q2_design(
             brief_content=self.state.outline or "",
             story_type=self.state.story_type or "mechanic",
             is_prototype=is_prototype,
-            q1_result="",  # Q1 由用户自行评估后填入
-            mechanism_content="",  # Q3 由 Q2 结果填入
+            q1_result="",  # backward compat
             event_count=event_count,
             char_count=char_count,
         )
 
     def run_stage_2(self) -> bool:
-        """阶段2：剧本创作
+        """阶段2：剧本创作 — 完整 Q1-Q6  pipeline
 
-        原型模式：只生成2个角色（而非6个）
+        Q1: 信息矩阵（JSON + Markdown）
+        Q2: 角色背景设定
+        Q3: a本（阅读本）
+        Q4: b本（线索本 + 线索卡）
+        Q5: DM 手册
+        Q6: 结局扩展
+
+        原型模式：2角色3事件；完整模式：6角色7事件
         """
-        self.console.print("[cyan]阶段2：剧本创作[/cyan]")
+        self.console.print("[cyan]阶段2：剧本创作（完整 pipeline）[/cyan]")
 
         if not (self.session.project_path / "mechanism.md").exists():
             self.console.print("[red]请先完成阶段1[/red]")
             return False
 
-        if (self.session.project_path / "characters.md").exists():
+        # Check all Phase 2 artifacts
+        phase2_artifacts = [
+            "information_matrix.md",
+            "background.md",
+            "characters.md",
+            "scripts_b.md",
+            "dm_manual.md",
+            "endings.md",
+        ]
+        existing = [f for f in phase2_artifacts if (self.session.project_path / f).exists()]
+        missing = [f for f in phase2_artifacts if f not in existing]
+
+        if not missing:
             self.console.print("[green]阶段2已完成，跳过[/green]")
             return True
+        elif existing:
+            self.console.print(f"[yellow]阶段2部分完成，已生成: {', '.join(existing)}，继续...[/yellow]")
+        else:
+            self.console.print("[cyan]开始阶段2：剧本创作[/cyan]")
 
         mechanism = (self.session.project_path / "mechanism.md").read_text(encoding="utf-8")
         outline = self.state.outline or ""
+        char_count = 2 if self.state.is_prototype else 6
+        event_count = 3 if self.state.is_prototype else 7
+        total_cost = 0.0
 
         try:
-            # 第一步：生成信息矩阵
+            # ── Q1: 信息矩阵 ─────────────────────────────────────────────
+            self.console.print("[cyan]Q1：生成信息矩阵...[/cyan]")
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成角色信息矩阵...", total=None)
                 matrix_response = self._call_llm(
@@ -161,68 +243,128 @@ class PhaseRunner:
                     system="你是一个专业的剧本杀作家，擅长设计复杂、严谨的角色关系和事件逻辑。",
                     operation="stage_2_matrix"
                 )
+            total_cost += matrix_response.cost
 
-            # 保存 Markdown 版本
             matrix_file = self.session.project_path / "information_matrix.md"
             matrix_file.write_text(matrix_response.content, encoding="utf-8")
 
             # 提取并保存 JSON truth file
             truth_mgr = TruthFileManager(self.session.project_path)
-            char_count = 2 if self.state.is_prototype else 6
-            event_count = 3 if self.state.is_prototype else 7
-
-            # 尝试从响应中提取 JSON
             json_data = self._extract_json_from_response(matrix_response.content)
             if json_data:
                 try:
                     from murder_wizard.wizard.schemas import CharacterMatrix
                     matrix_model = CharacterMatrix.model_validate(json_data)
-                    truth_mgr.save_matrix(matrix_model, author="llm", note="Stage 2 matrix generation")
-                    self.console.print(f"[green]JSON 真相文件已保存到：{truth_mgr._path('character_matrix')}[/green]")
+                    truth_mgr.save_matrix(matrix_model, author="llm", note="Stage 2 Q1 matrix generation")
+                    self.console.print(f"[green]JSON 真相文件已保存[/green]")
                 except Exception as e:
-                    self.console.print(f"[yellow]JSON 校验失败，将使用 Markdown：{e}[/yellow]")
-                    # 降级：从 Markdown 迁移
+                    self.console.print(f"[yellow]JSON 校验失败，从 Markdown 迁移：{e}[/yellow]")
                     migrated = truth_mgr.migrate_from_markdown(
-                        matrix_response.content,
-                        char_count=char_count,
-                        event_count=event_count,
-                        is_prototype=self.state.is_prototype,
+                        matrix_response.content, char_count=char_count,
+                        event_count=event_count, is_prototype=self.state.is_prototype,
                     )
-                    truth_mgr.save_matrix(migrated, author="llm", note=f"Migrated from Markdown: {e}")
-                    self.console.print(f"[green]已从 Markdown 迁移到 JSON 真相文件[/green]")
+                    truth_mgr.save_matrix(migrated, author="llm", note=f"Migrated: {e}")
             else:
-                # 完全没有 JSON，从 Markdown 迁移
                 migrated = truth_mgr.migrate_from_markdown(
-                    matrix_response.content,
-                    char_count=char_count,
-                    event_count=event_count,
-                    is_prototype=self.state.is_prototype,
+                    matrix_response.content, char_count=char_count,
+                    event_count=event_count, is_prototype=self.state.is_prototype,
                 )
-                truth_mgr.save_matrix(migrated, author="llm", note="No JSON in LLM response, migrated from Markdown")
+                truth_mgr.save_matrix(migrated, author="llm", note="No JSON in Q1 response")
 
-            # 第二步：生成角色脚本
+            self.console.print(f"[green]Q1 完成：信息矩阵已保存[/green]")
+
+            # ── Q2: 角色背景设定 ─────────────────────────────────────────
+            self.console.print("[cyan]Q2：生成角色背景设定...[/cyan]")
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成角色背景...", total=None)
+                bg_response = self._call_llm(
+                    self._build_background_prompt(outline, matrix_response.content),
+                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    operation="stage_2_background"
+                )
+            total_cost += bg_response.cost
+
+            bg_file = self.session.project_path / "background.md"
+            bg_file.write_text(bg_response.content, encoding="utf-8")
+            self.console.print(f"[green]Q2 完成：背景设定已保存[/green]")
+
+            # ── Q3: a本（阅读本）─────────────────────────────────────────
+            self.console.print("[cyan]Q3：生成 a本（阅读本）...[/cyan]")
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成角色剧本...", total=None)
-                char_response = self._call_llm(
-                    self._build_characters_prompt(matrix_response.content),
-                    system="你是一个专业的剧本杀作家，每位角色的剧本都要符合其身份、背景和视角。",
+                a_response = self._call_llm(
+                    self._build_characters_prompt(bg_response.content, matrix_response.content),
+                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
                     operation="stage_2_characters"
                 )
+            total_cost += a_response.cost
 
-            # 保存
             chars_file = self.session.project_path / "characters.md"
-            chars_file.write_text(char_response.content, encoding="utf-8")
+            chars_file.write_text(a_response.content, encoding="utf-8")
+            self.console.print(f"[green]Q3 完成：a本已保存[/green]")
 
-            self.state.characters = {"raw": char_response.content}
+            # ── Q4: b本（线索本）─────────────────────────────────────────
+            self.console.print("[cyan]Q4：生成 b本（线索本）...[/cyan]")
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成线索本...", total=None)
+                b_response = self._call_llm(
+                    self._build_clue_cards_prompt(a_response.content, matrix_response.content),
+                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    operation="stage_2_clue_cards"
+                )
+            total_cost += b_response.cost
+
+            b_file = self.session.project_path / "scripts_b.md"
+            b_file.write_text(b_response.content, encoding="utf-8")
+            self.console.print(f"[green]Q4 完成：b本已保存[/green]")
+
+            # ── Q5: DM 手册 ─────────────────────────────────────────────
+            self.console.print("[cyan]Q5：生成 DM 手册...[/cyan]")
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成 DM 手册...", total=None)
+                full_script = f"{a_response.content}\n\n{b_response.content}"
+                dm_response = self._call_llm(
+                    self._build_dm_manual_prompt(full_script, matrix_response.content, mechanism),
+                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    operation="stage_2_dm_manual"
+                )
+            total_cost += dm_response.cost
+
+            dm_file = self.session.project_path / "dm_manual.md"
+            dm_file.write_text(dm_response.content, encoding="utf-8")
+            self.console.print(f"[green]Q5 完成：DM 手册已保存[/green]")
+
+            # ── Q6: 结局扩展 ─────────────────────────────────────────────
+            self.console.print("[cyan]Q6：生成结局扩展...[/cyan]")
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                task = progress.add_task("生成结局...", total=None)
+                ending_response = self._call_llm(
+                    self._build_endings_prompt(full_script, matrix_response.content, dm_response.content),
+                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    operation="stage_2_endings"
+                )
+            total_cost += ending_response.cost
+
+            endings_file = self.session.project_path / "endings.md"
+            endings_file.write_text(ending_response.content, encoding="utf-8")
+            self.console.print(f"[green]Q6 完成：结局扩展已保存[/green]")
+
+            # ── 完成 ───────────────────────────────────────────────────
+            self.state.characters = {
+                "raw": a_response.content,
+                "background": bg_response.content,
+                "scripts_b": b_response.content,
+                "dm_manual": dm_response.content,
+                "endings": ending_response.content,
+            }
             self.state.current_stage = Stage.STAGE_2_SCRIPT
             self.session.save(self.state)
 
-            self.console.print(f"[green]角色信息矩阵已保存到：{matrix_file}[/green]")
-            self.console.print(f"[green]角色剧本已保存到：{chars_file}[/green]")
-            self._show_cost_warning(matrix_response.cost + char_response.cost)
+            self.console.print(f"[green]阶段2全部完成！总消耗：${total_cost:.4f}[/green]")
+            self._show_cost_warning(total_cost)
 
             # 轻量穿帮检查
-            self._run_consistency_check(char_response.content, matrix_response.content)
+            self._run_consistency_check(a_response.content, matrix_response.content)
 
             return True
 
@@ -278,13 +420,49 @@ class PhaseRunner:
             is_prototype=self.state.is_prototype,
         )
 
-    def _build_characters_prompt(self, matrix: str) -> str:
-        """构建角色剧本 prompt"""
+    def _build_characters_prompt(self, background_content: str, matrix: str) -> str:
+        """构建角色剧本 prompt（Q3: a本）"""
         return self._loader.character_script_a(
-            background_content=matrix,  # Q2 background content is derived from matrix
+            background_content=background_content,
             matrix_content=matrix,
             mechanism_content=(self.session.project_path / "mechanism.md").read_text(encoding="utf-8")
                 if (self.session.project_path / "mechanism.md").exists() else "",
+            is_prototype=self.state.is_prototype,
+        )
+
+    def _build_background_prompt(self, outline: str, matrix: str) -> str:
+        """构建角色背景设定 prompt（Q2）"""
+        return self._loader.character_background(
+            brief_content=outline,
+            matrix_content=matrix,
+            is_prototype=self.state.is_prototype,
+        )
+
+    def _build_clue_cards_prompt(self, a_content: str, matrix: str) -> str:
+        """构建线索本 prompt（Q4: b本）"""
+        return self._loader.character_script_b(
+            a_content=a_content,
+            matrix_content=matrix,
+            mechanism_content=(self.session.project_path / "mechanism.md").read_text(encoding="utf-8")
+                if (self.session.project_path / "mechanism.md").exists() else "",
+            is_prototype=self.state.is_prototype,
+        )
+
+    def _build_dm_manual_prompt(self, full_script: str, matrix: str, mechanism: str) -> str:
+        """构建 DM 手册 prompt（Q5）"""
+        return self._loader.dm_manual(
+            full_script=full_script,
+            matrix_content=matrix,
+            mechanism_content=mechanism,
+            is_prototype=self.state.is_prototype,
+        )
+
+    def _build_endings_prompt(self, full_script: str, matrix: str, dm_manual: str) -> str:
+        """构建结局扩展 prompt（Q6）"""
+        return self._loader.ending_expansion(
+            full_script=full_script,
+            matrix_content=matrix,
+            dm_manual=dm_manual,
             is_prototype=self.state.is_prototype,
         )
 
@@ -692,7 +870,7 @@ Phase 1 扩写内容：
             return False
 
 
-    def run_audit(self) -> bool:
+    def run_audit(self, force: bool = False) -> bool:
         """完整穿帮审计：Auditor → Reviser → Re-audit 循环，直到 P0 全部清除。
 
         最多循环 3 次。每次循环：
@@ -704,8 +882,12 @@ Phase 1 扩写内容：
         不同于阶段2后自动运行的轻量检查，audit 是独立命令，
         做深度分析，包括：角色x事件矩阵逐格核对、逻辑漏洞、
         阵营矛盾、结局合理性等。
+
+        Args:
+            force: 如果为 True，即使仍有未解决的 P0 也继续（跳过 known-P0 检查）
         """
         MAX_ITERATIONS = 3
+        KNOWN_P0_FILE = self.session.project_path / ".known_p0"
         self.console.print("[cyan]运行完整穿帮审计（Auditor → Reviser 循环）...[/cyan]")
 
         characters_file = self.session.project_path / "characters.md"
@@ -776,7 +958,8 @@ Phase 1 扩写内容：
                     break
 
                 if iteration == MAX_ITERATIONS:
-                    self.console.print(f"[yellow]达到最大循环次数 ({MAX_ITERATIONS})，仍有 {p0_count} 个 P0 问题未解决[/yellow]")
+                    self.console.print(f"[yellow]达到最大循环次数 ({MAX_ITERATIONS})，仍有 {p0_count} 个 P0 问题[/yellow]")
+                    self.console.print("[dim]使用 --force 强制推进，或在 .known_p0 中标记已知可接受的 P0[/dim]")
                     break
 
                 # 有 P0 → 运行 Reviser
@@ -827,12 +1010,35 @@ Phase 1 扩写内容：
 
             # 问题摘要
             final_p0 = all_audit_rounds[-1]["p0"]
-            if final_p0 > 0:
-                self.console.print(f"[yellow]最终仍有 {final_p0} 个 P0 问题，请在 audit_report.md 中查看详情[/yellow]")
-            else:
-                self.console.print("[green]✓ 审计通过，所有 P0 问题已清除[/green]")
 
-            return final_p0 == 0
+            # 加载已知可接受的 P0
+            known_p0s = set()
+            if KNOWN_P0_FILE.exists():
+                try:
+                    known_p0s = set(
+                        line.strip() for line in KNOWN_P0_FILE.read_text(encoding="utf-8").splitlines()
+                        if line.strip() and not line.startswith("#")
+                    )
+                    self.console.print(f"[dim]已加载 {len(known_p0s)} 个已知可接受 P0[/dim]")
+                except Exception:
+                    known_p0s = set()
+
+            unresolved_p0 = final_p0 - len(known_p0s)
+
+            if final_p0 == 0:
+                self.console.print("[green]✓ 审计通过，所有 P0 问题已清除[/green]")
+                return True
+            elif force:
+                self.console.print(f"[yellow]⚠ --force 模式：仍有 {unresolved_p0} 个未解决 P0（{len(known_p0s)} 个已标记为已知可接受）[/yellow]")
+                return True
+            elif unresolved_p0 == 0:
+                self.console.print(f"[yellow]⚠ 仍有 {final_p0} 个 P0，但全部已标记为已知可接受（.known_p0）[/yellow]")
+                self.console.print("[dim]使用 --force 可强制推进，或编辑 .known_p0 移除标记[/dim]")
+                return True
+            else:
+                self.console.print(f"[yellow]最终仍有 {unresolved_p0} 个未解决 P0（{len(known_p0s)} 个已标记为已知可接受）[/yellow]")
+                self.console.print(f"[dim]在 .known_p0 文件中添加 P0 描述可将其标记为已知可接受[/dim]")
+                return False
 
         except Exception as e:
             self.console.print(f"[red]审计失败：{e}[/red]")

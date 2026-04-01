@@ -9,7 +9,6 @@ from io import StringIO
 from rich.console import Console
 from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
-from murder_wizard.wizard.truth_files import TruthFileManager
 
 
 class SSEConsole(Console):

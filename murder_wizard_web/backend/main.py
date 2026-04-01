@@ -1,4 +1,5 @@
 """Murder Wizard Web Dashboard - FastAPI Backend."""
+import os
 import sys
 from pathlib import Path
 
@@ -13,10 +14,13 @@ from api import projects, phases, files, matrix, costs, audit, pdf, assets, sett
 
 app = FastAPI(title="Murder Wizard Web API", version="0.6.0")
 
-# CORS: allow all origins for development
+# CORS: restrict origins based on ALLOWED_ORIGINS env var (comma-separated list)
+_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",")
+if _allowed_origins == [""]:
+    _allowed_origins = ["http://localhost:3000", "http://localhost:5173"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

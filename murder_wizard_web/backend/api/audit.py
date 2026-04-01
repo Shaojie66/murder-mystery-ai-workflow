@@ -7,9 +7,17 @@ router = APIRouter(prefix="/api/projects/{project_name}/audit", tags=["audit"])
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 
 
+def _validate_project_name(name: str) -> None:
+    if not name or name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid project name")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Project name cannot contain path separators or '..'")
+
+
 @router.get("/report")
 async def get_audit_report(project_name: str):
     """Get the latest audit report."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")

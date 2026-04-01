@@ -1,7 +1,8 @@
 """Analytics API - tracks landing page A/B test events."""
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -10,27 +11,29 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 _events: list[dict] = []
 
 
+class TrackRequest(BaseModel):
+    event: str
+    variant: Optional[str] = None
+    url: Optional[str] = None
+    duration: Optional[int] = None
+    referrer: Optional[str] = None
+    props: Optional[dict[str, Any]] = None
+
+
 @router.post("/track")
-async def track_event(
-    event: str,
-    variant: Optional[str] = None,
-    url: Optional[str] = None,
-    duration: Optional[int] = None,
-    referrer: Optional[str] = None,
-    **props,
-):
+async def track_event(data: TrackRequest):
     """Track an analytics event.
 
     Events are stored in memory for development.
     For production, integrate with Plausible Analytics or a custom database.
     """
     event_data = {
-        "event": event,
-        "variant": variant,
-        "url": url,
-        "duration": duration,
-        "referrer": referrer,
-        "props": {k: v for k, v in props.items() if v is not None},
+        "event": data.event,
+        "variant": data.variant,
+        "url": data.url,
+        "duration": data.duration,
+        "referrer": data.referrer,
+        "props": data.props or {},
         "timestamp": datetime.utcnow().isoformat(),
     }
     _events.append(event_data)

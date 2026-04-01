@@ -12,6 +12,13 @@ router = APIRouter(prefix="/api/projects/{project_name}/matrix", tags=["matrix"]
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 
 
+def _validate_project_name(name: str) -> None:
+    if not name or name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid project name")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Project name cannot contain path separators or '..'")
+
+
 class UpdateCellRequest(BaseModel):
     state: str
     detail: str = ""
@@ -31,6 +38,7 @@ class AddEvidenceRequest(BaseModel):
 @router.get("")
 async def get_matrix(project_name: str):
     """Get the full character matrix."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -47,6 +55,7 @@ async def get_matrix(project_name: str):
 @router.put("/cells/{char_id}/{event_id}")
 async def update_cell(project_name: str, char_id: str, event_id: str, req: UpdateCellRequest):
     """Update a single cell's cognition state."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -83,6 +92,7 @@ async def update_cell(project_name: str, char_id: str, event_id: str, req: Updat
 @router.post("/evidence")
 async def add_evidence(project_name: str, req: AddEvidenceRequest):
     """Add an evidence item to the matrix."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -111,6 +121,7 @@ async def add_evidence(project_name: str, req: AddEvidenceRequest):
 @router.post("/initialize")
 async def initialize_matrix(project_name: str, char_count: int = 6, event_count: int = 7, is_prototype: bool = False):
     """Initialize a new character matrix for a project."""
+    _validate_project_name(project_name)
     project_path = MURDER_WIZARD_BASE / project_name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")

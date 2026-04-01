@@ -150,7 +150,7 @@ class PromptLoader:
     }
 
     def stage1_design(self, **variables) -> str:
-        """Layer 1：类型化设计 prompt.
+        """Layer 1：类型化设计 prompt（完整模板，含 Q1-Q4）.
 
         根据 story_type 自动选择对应模板：
         - emotion    → 01_emotion_design.md（情感本）
@@ -162,6 +162,46 @@ class PromptLoader:
         story_type = variables.get("story_type", "mechanic")
         template_name = self._STAGE1_TEMPLATE_MAP.get(story_type, "01_mechanism_design.md")
         return self.render(template_name, **variables)
+
+    def stage1_q1_validation(self, **variables) -> str:
+        """Stage 1 Q1：概念/情感定位验证（第一步）."""
+        story_type = variables.get("story_type", "mechanic")
+        template_name = self._STAGE1_TEMPLATE_MAP.get(story_type, "01_mechanism_design.md")
+        # 只渲染 Q1 部分（提取 Q1 标题到 --- 之间的内容）
+        full = self.render(template_name, json_only=False, **variables)
+        # Q1 在第一个 ## Q2 之前
+        idx = full.find("## Q2")
+        if idx == -1:
+            return full
+        return full[:idx]
+
+    def stage1_q2_design(self, **variables) -> str:
+        """Stage 1 Q2：核心机制/情感设计（第二步，用 Q1 结果）."""
+        story_type = variables.get("story_type", "mechanic")
+        template_name = self._STAGE1_TEMPLATE_MAP.get(story_type, "01_mechanism_design.md")
+        full = self.render(template_name, json_only=False, **variables)
+        # Q2 在 ## Q2 和 ## Q3 之间
+        start = full.find("## Q2")
+        end = full.find("## Q3" if start > 0 else "\n## Q4")
+        if start == -1:
+            return full
+        if end == -1:
+            end = full.find("## Q4")
+        if end == -1:
+            return full[start:]
+        return full[start:end]
+
+    def stage1_q3_validation(self, **variables) -> str:
+        """Stage 1 Q3：平衡性/一致性验证（第三步，用 Q2 结果）."""
+        story_type = variables.get("story_type", "mechanic")
+        template_name = self._STAGE1_TEMPLATE_MAP.get(story_type, "01_mechanism_design.md")
+        full = self.render(template_name, json_only=False, **variables)
+        # Q3 在 ## Q3 和 ## Q4 之间
+        start = full.find("## Q3")
+        end = full.find("## Q4" if start > 0 else len(full))
+        if start == -1:
+            return ""
+        return full[start:end if end > start else len(full)]
 
     def system_stage1_designer(self, story_type: str) -> str:
         """获取阶段1的系统 prompt.

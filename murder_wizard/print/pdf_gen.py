@@ -85,8 +85,14 @@ class PDFGenerator:
             elif line.startswith("---"):
                 story.append(Spacer(1, 0.5*cm))
             else:
-                # 处理 Markdown 强调
-                line = line.replace("**", "<b>", 1).replace("**", "</b>", 1)
+                # 处理 Markdown 强调（bold/inline code）
+                import re
+                # 替换 **bold** → <b>bold</b>
+                line = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', line)
+                # 替换 `code` → <i>code</i>
+                line = re.sub(r'`(.+?)`', r'<i>\1</i>', line)
+                # 替换 ~~del~~ → <strike>del</strike>
+                line = re.sub(r'~~(.+?)~~', r'<strike>\1</strike>', line)
                 story.append(Paragraph(line, styles["Normal"]))
 
         doc.build(story)
@@ -107,12 +113,12 @@ class PDFGenerator:
 
         output_path = output_dir / "线索卡.pdf"
 
-        # 读取信息矩阵
+        # 读取信息矩阵和 b本
         matrix_file = self.project_path / "information_matrix.md"
-        if matrix_file.exists():
-            matrix_content = matrix_file.read_text(encoding="utf-8")
-        else:
-            matrix_content = ""
+        matrix_content = matrix_file.read_text(encoding="utf-8") if matrix_file.exists() else ""
+
+        b_file = self.project_path / "scripts_b.md"
+        b_content = b_file.read_text(encoding="utf-8") if b_file.exists() else ""
 
         c = canvas.Canvas(str(output_path), pagesize=A4)
         width, height = A4
@@ -121,15 +127,14 @@ class PDFGenerator:
         card_width = width / 3 - 1*cm
         card_height = height / 2 - 1*cm
 
-        # 生成示例线索卡
-        clues = [
-            "关键证据",
-            "时间线",
-            "人物关系",
-            "隐藏线索",
-            "指向线索",
-            "迷惑线索",
-        ]
+        # 从 b本 中提取真实线索卡内容
+        clues = self._extract_clues_from_b_content(b_content)
+        if not clues:
+            # 回退到信息矩阵中的证据
+            clues = self._extract_evidence_from_matrix(matrix_content)
+        if not clues:
+            # 最终回退
+            clues = ["关键证据", "时间线", "人物关系", "隐藏线索", "指向线索", "迷惑线索"]
 
         for i, clue in enumerate(clues):
             col = i % 3
@@ -148,6 +153,55 @@ class PDFGenerator:
 
         c.save()
         return output_path
+
+    def _extract_clues_from_b_content(self, b_content: str) -> list[str]:
+        """从 b本 (scripts_b.md) 中提取线索卡内容。
+
+        查找形如「线索1：xxx」「线索 1: xxx」的段落，
+        或「## 线索卡」章节下的表格行。
+        """
+        import re
+        clues = []
+
+        # 策略1：查找 ## 线索N 或 ## 线索 N 章节
+        for match in re.finditer(r'#{1,3}\s*线索[牌]?\s*(\d+)[:：]?\s*(.+)', b_content):
+            label = match.group(1).strip()
+            text = match.group(2).strip()
+            if text:
+                clues.append(f"线索{label}：{text[:50]}")
+
+        # 策略2：查找 | 线索 | ... |  表格行
+        for match in re.finditer(r'\|\s*线索[^|]*\|\s*([^|]+)\|', b_content):
+            text = match.group(1).strip()
+            if text and text not in ['', '名称', '描述']:
+                clues.append(text[:60])
+
+        # 策略3：「线索N：内容」模式的行
+        for match in re.finditer(r'线索\s*(\d+)[:：]\s*(.+)', b_content):
+            text = match.group(2).strip()
+            if text:
+                clues.append(f"线索{match.group(1)}：{text[:50]}")
+
+        # 去重并截断
+        seen = set()
+        result = []
+        for c in clues:
+            key = c[:20]
+            if key not in seen:
+                seen.add(key)
+                result.append(c if len(c) <= 60 else c[:57] + "...")
+        return result[:6]  # 最多6张
+
+    def _extract_evidence_from_matrix(self, matrix_content: str) -> list[str]:
+        """从信息矩阵中提取证据名称，作为线索卡备选内容。"""
+        import re
+        clues = []
+        # 查找形如「EV-A」「证据A」「证据 A」的证据标记
+        for match in re.finditer(r'(\bEV[-_]?[A-Z]\b|证据[A-Z][：:]?\s*\S+|证据\s+[A-Z][：:]?\s*\S+)', matrix_content):
+            text = match.group(0).strip()
+            if text and text not in clues:
+                clues.append(text)
+        return clues[:6]
 
     def check_print_ready(self) -> tuple[bool, list[str]]:
         """

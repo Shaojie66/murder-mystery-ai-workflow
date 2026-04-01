@@ -1,9 +1,22 @@
 """LLM client adapter - supports Claude and OpenAI."""
+import logging
 import os
 import time
 from abc import ABC, abstractmethod
 from typing import Optional, Iterator
 from dataclasses import dataclass
+
+# Module-level constants to avoid magic numbers
+DEFAULT_MAX_TOKENS = 4096
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BASE_DELAY = 2  # seconds
+
+# Pricing (per 1M tokens) — used for cost estimation
+CLAUDE_PRICING_INPUT = 3.0   # $3/MTok input
+CLAUDE_PRICING_OUTPUT = 15.0  # $15/MTok output
+OPENAI_PRICING = 10.0  # $10/MTok average for GPT-4o
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -50,14 +63,12 @@ class ClaudeAdapter(LLMAdapter):
 
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
         import anthropic
-        max_retries = 3
-        base_delay = 2
 
-        for attempt in range(max_retries):
+        for attempt in range(DEFAULT_MAX_RETRIES):
             try:
                 response = self.client.messages.create(
                     model=self.model,
-                    max_tokens=4096,
+                    max_tokens=DEFAULT_MAX_TOKENS,
                     system=system,
                     messages=[{"role": "user", "content": prompt}]
                 )
@@ -66,8 +77,10 @@ class ClaudeAdapter(LLMAdapter):
                 output_tokens = response.usage.output_tokens
                 total_tokens = input_tokens + output_tokens
 
-                # Claude pricing: $3/MTok input, $15/MTok output
-                cost = (input_tokens / 1_000_000) * 3 + (output_tokens / 1_000_000) * 15
+                cost = (
+                    (input_tokens / 1_000_000) * CLAUDE_PRICING_INPUT
+                    + (output_tokens / 1_000_000) * CLAUDE_PRICING_OUTPUT
+                )
 
                 return LLMResponse(
                     content=content,
@@ -76,8 +89,8 @@ class ClaudeAdapter(LLMAdapter):
                     model=self.model
                 )
             except anthropic.RateLimitError:
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
+                if attempt < DEFAULT_MAX_RETRIES - 1:
+                    delay = DEFAULT_BASE_DELAY * (2 ** attempt)
                     time.sleep(delay)
                 else:
                     raise
@@ -121,14 +134,12 @@ class MiniMaxAdapter(LLMAdapter):
 
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
         import anthropic
-        max_retries = 3
-        base_delay = 2
 
-        for attempt in range(max_retries):
+        for attempt in range(DEFAULT_MAX_RETRIES):
             try:
                 response = self.client.messages.create(
                     model=self.model,
-                    max_tokens=4096,
+                    max_tokens=DEFAULT_MAX_TOKENS,
                     system=system,
                     messages=[{"role": "user", "content": prompt}]
                 )
@@ -142,8 +153,11 @@ class MiniMaxAdapter(LLMAdapter):
                 output_tokens = response.usage.output_tokens
                 total_tokens = input_tokens + output_tokens
 
-                # MiniMax pricing - use estimate similar to Claude
-                cost = (input_tokens / 1_000_000) * 3 + (output_tokens / 1_000_000) * 15
+                # MiniMax pricing - use same estimate as Claude
+                cost = (
+                    (input_tokens / 1_000_000) * CLAUDE_PRICING_INPUT
+                    + (output_tokens / 1_000_000) * CLAUDE_PRICING_OUTPUT
+                )
 
                 return LLMResponse(
                     content=content,
@@ -152,8 +166,8 @@ class MiniMaxAdapter(LLMAdapter):
                     model=self.model
                 )
             except anthropic.RateLimitError:
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
+                if attempt < DEFAULT_MAX_RETRIES - 1:
+                    delay = DEFAULT_BASE_DELAY * (2 ** attempt)
                     time.sleep(delay)
                 else:
                     raise
@@ -194,10 +208,8 @@ class OpenAIAdapter(LLMAdapter):
 
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
         from openai import RateLimitError
-        max_retries = 3
-        base_delay = 2
 
-        for attempt in range(max_retries):
+        for attempt in range(DEFAULT_MAX_RETRIES):
             try:
                 messages = []
                 if system:
@@ -207,12 +219,11 @@ class OpenAIAdapter(LLMAdapter):
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    max_tokens=4096,
+                    max_tokens=DEFAULT_MAX_TOKENS,
                 )
                 content = response.choices[0].message.content
                 tokens = response.usage.total_tokens
-                # GPT-4o: $5/MTok input, $15/MTok output
-                cost = (tokens / 1_000_000) * 10  # 平均
+                cost = (tokens / 1_000_000) * OPENAI_PRICING
 
                 return LLMResponse(
                     content=content,
@@ -221,8 +232,8 @@ class OpenAIAdapter(LLMAdapter):
                     model=self.model
                 )
             except RateLimitError:
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
+                if attempt < DEFAULT_MAX_RETRIES - 1:
+                    delay = DEFAULT_BASE_DELAY * (2 ** attempt)
                     time.sleep(delay)
                 else:
                     raise
@@ -285,14 +296,12 @@ class OllamaAdapter(LLMAdapter):
             pass
 
         if parsed and parsed.hostname and parsed.hostname not in self.LOCAL_HOSTS:
-            import sys
-            print(
-                f"WARNING: Ollama base_url 指向远程地址 {parsed.hostname}，"
-                f"剧本内容将被发送到该服务器。\n"
-                f"  如果这不是预期行为，请检查 OLLAMA_BASE_URL 环境变量。\n"
-                f"  如需强制使用远程地址，设置环境变量 OLLAMA_NO_URL_WARN=1 跳过此警告。",
-                file=sys.stderr,
-            )
+            if not os.environ.get("OLLAMA_NO_URL_WARN"):
+                logger.warning(
+                    "Ollama base_url points to remote address %s —剧本杀 content will be sent to that server. "
+                    "Set OLLAMA_NO_URL_WARN=1 to suppress this warning.",
+                    parsed.hostname,
+                )
 
         self.base_url = base_url
         self.model = model
@@ -306,10 +315,8 @@ class OllamaAdapter(LLMAdapter):
     def complete(self, prompt: str, system: str = "") -> LLMResponse:
         """调用 Ollama（OpenAI 兼容端点）"""
         from openai import APIError, RateLimitError
-        max_retries = 3
-        base_delay = 2
 
-        for attempt in range(max_retries):
+        for attempt in range(DEFAULT_MAX_RETRIES):
             try:
                 messages = []
                 if system:
@@ -319,7 +326,7 @@ class OllamaAdapter(LLMAdapter):
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    max_tokens=4096,
+                    max_tokens=DEFAULT_MAX_TOKENS,
                 )
                 content = response.choices[0].message.content
                 # Ollama 不返回 usage.token_count 时估计
@@ -334,8 +341,8 @@ class OllamaAdapter(LLMAdapter):
                     model=self.model
                 )
             except (APIError, RateLimitError):
-                if attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)
+                if attempt < DEFAULT_MAX_RETRIES - 1:
+                    delay = DEFAULT_BASE_DELAY * (2 ** attempt)
                     time.sleep(delay)
                 else:
                     raise

@@ -25,6 +25,21 @@ async def require_auth(authorization: Optional[str] = Header(None)) -> str:
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 
 
+def _validate_project_name(name: str) -> None:
+    """Validate project name to prevent path traversal attacks."""
+    if not name:
+        raise HTTPException(status_code=400, detail="Project name cannot be empty")
+    if name in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid project name")
+    if ".." in name or "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Project name cannot contain path separators or '..'")
+    if name.startswith("-"):
+        raise HTTPException(status_code=400, detail="Project name cannot start with '-'")
+    # Reject names that would create hidden files (starting with .)
+    if name.startswith("."):
+        raise HTTPException(status_code=400, detail="Project name cannot start with '.'")
+
+
 class CreateProjectRequest(BaseModel):
     name: str
     story_type: str = "emotion"  # emotion, reasoning, fun, horror, mechanic
@@ -140,6 +155,7 @@ async def list_projects():
 @router.post("", response_model=dict)
 async def create_project(req: CreateProjectRequest, user_id: str = Depends(require_auth)):
     """Create a new project (simplified init without interactive wizard)."""
+    _validate_project_name(req.name)
     project_path = MURDER_WIZARD_BASE / req.name
 
     if project_path.exists():
@@ -191,6 +207,7 @@ def _build_brief_from_answers(story_type: str, era: str, answers: dict) -> str:
 @router.get("/{name}", response_model=ProjectDetails)
 async def get_project(name: str):
     """Get detailed project info."""
+    _validate_project_name(name)
     project_path = MURDER_WIZARD_BASE / name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
@@ -242,6 +259,7 @@ async def get_project(name: str):
 @router.delete("/{name}")
 async def delete_project(name: str):
     """Delete a project and all its files."""
+    _validate_project_name(name)
     project_path = MURDER_WIZARD_BASE / name
     if not project_path.exists():
         raise HTTPException(status_code=404, detail="Project not found")
