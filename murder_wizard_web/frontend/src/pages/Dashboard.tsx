@@ -3,6 +3,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { listProjects, createProject, deleteProject } from '../api/projects'
 import { useProjectStore } from '../stores/projectStore'
 import type { Project } from '../types/api'
+import SurveyModal, { useSurveyModal } from '../components/SurveyModal'
+import UpgradePrompt from '../components/UpgradePrompt'
+import { getPlan, incrementProjectsUsed } from '../api/user'
+import type { PlanInfo } from '../api/user'
 
 const STORY_TYPE_LABELS: Record<string, string> = {
   emotion: '情感本',
@@ -45,6 +49,10 @@ export default function Dashboard() {
   const [filterStage, setFilterStage] = useState('all')
   const navigate = useNavigate()
   const { setProjects: setStoreProjects } = useProjectStore()
+  const { show: showSurvey, onClose: closeSurvey } = useSurveyModal()
+  const [planInfo, setPlanInfo] = useState<PlanInfo | null>(null)
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
+  const [upgradeTrigger, setUpgradeTrigger] = useState<'project_limit' | 'audit' | 'expand' | 'cloud_sync'>('project_limit')
 
   async function loadProjects() {
     try {
@@ -59,7 +67,10 @@ export default function Dashboard() {
     }
   }
 
-  useEffect(() => { loadProjects() }, [])
+  useEffect(() => {
+    loadProjects()
+    getPlan().then(setPlanInfo).catch(() => setPlanInfo(null))
+  }, [])
 
   const filteredProjects = projects.filter((p) => {
     const typeMatch = filterType === 'all' || p.story_type === filterType
@@ -71,11 +82,13 @@ export default function Dashboard() {
     e.preventDefault()
     if (!newName.trim()) return
     try {
-      await createProject({ name: newName.trim(), story_type: newType, is_prototype: newPrototype })
+      const result = await createProject({ name: newName.trim(), story_type: newType, is_prototype: newPrototype })
       setShowCreate(false)
       setNewName('')
+      // H2-A: increment project count for plan tracking
+      incrementProjectsUsed().catch(() => {})
       loadProjects()
-      navigate(`/projects/${encodeURIComponent(newName.trim())}`)
+      navigate(`/projects/${encodeURIComponent(result.name)}`)
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : '创建失败')
     }
@@ -132,7 +145,34 @@ export default function Dashboard() {
             {filteredProjects.length > 0
               ? `${filteredProjects.length} 个项目`
               : projects.length > 0 ? '没有匹配的项目' : '开始你的第一个剧本杀创作'}
-          </p>
+            {planInfo && planInfo.plan === 'free' && (
+              <span
+                style={{
+                  marginLeft: '1rem',
+                  fontFamily: "'Crimson Pro', serif",
+                  fontSize: '12px',
+                  color: 'var(--text-faint)',
+                }}
+              >
+                · Free 版 ·{' '}
+                <button
+                  onClick={() => { setUpgradeTrigger('project_limit'); setShowUpgradePrompt(true) }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--accent-gold)',
+                    cursor: 'pointer',
+                    fontFamily: "'Crimson Pro', serif",
+                    fontSize: '12px',
+                    padding: 0,
+                    textDecoration: 'underline',
+                  }}
+                >
+                  升级
+                </button>
+              </span>
+            )}
+</p>
         </div>
       </header>
 
@@ -203,7 +243,18 @@ export default function Dashboard() {
               <option value="stage_8_community">社区运营</option>
             </select>
           </div>
-          <button onClick={() => setShowCreate(true)} className="btn-primary" style={{ fontSize: '13px' }}>
+          <button
+            onClick={() => {
+              if (planInfo && planInfo.plan === 'free' && projects.length >= planInfo.project_limit) {
+                setUpgradeTrigger('project_limit')
+                setShowUpgradePrompt(true)
+              } else {
+                setShowCreate(true)
+              }
+            }}
+            className="btn-primary"
+            style={{ fontSize: '13px' }}
+          >
             + 新建项目
           </button>
         </div>
@@ -279,7 +330,17 @@ export default function Dashboard() {
             >
               创建你的第一个剧本杀，开启创作之旅
             </p>
-            <button onClick={() => setShowCreate(true)} className="btn-primary">
+            <button
+              onClick={() => {
+                if (planInfo && planInfo.plan === 'free' && projects.length >= planInfo.project_limit) {
+                  setUpgradeTrigger('project_limit')
+                  setShowUpgradePrompt(true)
+                } else {
+                  setShowCreate(true)
+                }
+              }}
+              className="btn-primary"
+            >
               创建第一个项目
             </button>
           </div>
@@ -308,12 +369,12 @@ export default function Dashboard() {
                       transition: 'all 150ms',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.paddingLeft = '0.75rem'
-                      e.currentTarget.style.borderLeft = '2px solid var(--accent-crimson)'
+                      e.currentTarget.style.borderLeft = '3px solid var(--accent-crimson)'
+                      e.currentTarget.style.background = 'var(--bg-raised)'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.paddingLeft = '0'
                       e.currentTarget.style.borderLeft = '2px solid transparent'
+                      e.currentTarget.style.background = 'transparent'
                     }}
                   >
                     <div
@@ -430,6 +491,22 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Survey modal — one-time, shown after 3s */}
+      {showSurvey && <SurveyModal onClose={closeSurvey} />}
+
+      {/* H2-A Fake Door: Upgrade prompt when free users hit project limit */}
+      {showUpgradePrompt && planInfo && (
+        <UpgradePrompt
+          trigger={upgradeTrigger}
+          planInfo={planInfo}
+          onClose={() => setShowUpgradePrompt(false)}
+          onUpgrade={() => {
+            setShowUpgradePrompt(false)
+            navigate('/subscription')
+          }}
+        />
+      )}
 
       {/* Create modal — editorial style */}
       {showCreate && (
