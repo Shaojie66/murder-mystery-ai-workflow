@@ -161,7 +161,7 @@ class PhaseRunner:
                 task = progress.add_task("生成角色信息矩阵...", total=None)
                 matrix_response = self._call_llm(
                     self._build_matrix_prompt(outline, mechanism),
-                    system="你是一个专业的剧本杀作家，擅长设计复杂、严谨的角色关系和事件逻辑。",
+                    system=self._loader.system_script_writer(self.state.story_type),
                     operation="stage_2_matrix"
                 )
 
@@ -208,7 +208,7 @@ class PhaseRunner:
                 task = progress.add_task("生成角色剧本...", total=None)
                 char_response = self._call_llm(
                     self._build_characters_prompt(matrix_response.content),
-                    system="你是一个专业的剧本杀作家，每位角色的剧本都要符合其身份、背景和视角。",
+                    system=self._loader.system_script_writer(self.state.story_type),
                     operation="stage_2_characters"
                 )
 
@@ -236,14 +236,14 @@ class PhaseRunner:
             return False
 
     def _build_matrix_prompt(self, outline: str, mechanism: str) -> str:
-        """构建信息矩阵 prompt"""
-        return self._loader.information_matrix_json(
+        """构建信息矩阵 prompt（类型化）"""
+        return self._loader.stage2_script(
             brief_content=outline,
             mechanism_content=mechanism,
-            story_type=self.state.story_type or "机制本",
+            story_type=self.state.story_type or "mechanic",
             is_prototype=self.state.is_prototype,
-            fill_rules=None,  # uses default from loader
-            matrix_table=None,  # uses default blank table
+            fill_rules=None,
+            matrix_table=None,
         )
 
     def _run_consistency_check(self, characters: str, matrix: str) -> None:
@@ -282,12 +282,14 @@ class PhaseRunner:
         )
 
     def _build_characters_prompt(self, matrix: str) -> str:
-        """构建角色剧本 prompt"""
-        return self._loader.character_script_a(
-            background_content=matrix,  # Q2 background content is derived from matrix
-            matrix_content=matrix,
+        """构建角色剧本 prompt（类型化）"""
+        return self._loader.stage2_script(
+            brief_content=matrix,
             mechanism_content=(self.session.project_path / "mechanism.md").read_text(encoding="utf-8")
                 if (self.session.project_path / "mechanism.md").exists() else "",
+            background_content=matrix,
+            matrix_content=matrix,
+            story_type=self.state.story_type or "mechanic",
             is_prototype=self.state.is_prototype,
         )
 
@@ -361,7 +363,7 @@ class PhaseRunner:
                 task = progress.add_task("生成图像提示词...", total=None)
                 response = self._call_llm(
                     self._build_image_prompt(characters),
-                    system="你是一个专业的视觉设计师，擅长为AI图像生成工具编写精确的提示词。",
+                    system=self._loader.system_visual_designer(self.state.story_type),
                     operation="stage_3_prompts"
                 )
 
@@ -396,10 +398,10 @@ class PhaseRunner:
             return False
 
     def _build_image_prompt(self, characters: str) -> str:
-        """构建图像提示词 prompt"""
-        return self._loader.visual_materials(
+        """构建图像提示词 prompt（类型化）"""
+        return self._loader.stage3_images(
             characters_content=characters,
-            story_type=self.state.story_type or "机制本",
+            story_type=self.state.story_type or "mechanic",
             is_prototype=self.state.is_prototype,
         )
 
@@ -1093,7 +1095,7 @@ Phase 1 扩写内容：
                 task = progress.add_task("生成测试指南...", total=None)
                 response = self._call_llm(
                     self._build_test_guide_prompt(characters, mechanism),
-                    system="你是一个专业的剧本杀测试设计师，擅长设计用户体验测试流程，发现游戏平衡性问题。",
+                    system=self._loader.system_test_designer(self.state.story_type),
                     operation="stage_4_test_guide"
                 )
 
@@ -1119,33 +1121,13 @@ Phase 1 扩写内容：
             return False
 
     def _build_test_guide_prompt(self, characters: str, mechanism: str) -> str:
-        """构建测试指南 prompt（使用 PromptLoader）"""
-        # 使用 Q2 角色背景模板的一部分作为参考
-        # 这里复用 system_prompt + 简洁结构
-        system = self._loader.system_test_designer()
-        is_proto = self.state.is_prototype
-        char_count = 2 if is_proto else 6
-        return f"""{system}
-
-请基于以下内容生成测试指南。
-
-角色剧本：
-{characters}
-
-机制设计：
-{mechanism}
-
-请生成：
-1. 测试场景设置（如何布置场景、介绍规则）
-2. DM主持要点（每个阶段的关键提示词）
-3. 平衡性检查点（哪些环节容易出现不平衡）
-4. 玩家反馈收集模板
-5. 常见问题及解决方案
-
-格式：Markdown，包含表格和清单
-
-原型模式：聚焦{char_count}人版的快速验证流程。
-"""
+        """构建测试指南 prompt（类型化）"""
+        return self._loader.stage4_test(
+            characters_content=characters,
+            mechanism_content=mechanism,
+            story_type=self.state.story_type or "mechanic",
+            is_prototype=self.state.is_prototype,
+        )
 
     def run_stage_5(self) -> bool:
         """阶段5：商业化
@@ -1170,7 +1152,7 @@ Phase 1 扩写内容：
                 task = progress.add_task("生成商业化方案...", total=None)
                 response = self._call_llm(
                     self._build_commercial_prompt(characters, mechanism),
-                    system="你是一个专业的剧本杀商业化顾问，熟悉国内剧本杀市场价格、成本和渠道。",
+                    system=self._loader.system_commercial_consultant(self.state.story_type),
                     operation="stage_5_commercial"
                 )
 
@@ -1190,27 +1172,13 @@ Phase 1 扩写内容：
             return False
 
     def _build_commercial_prompt(self, characters: str, mechanism: str) -> str:
-        """构建商业化 prompt"""
-        system = self._loader.system_commercial_consultant()
-        return f"""{system}
-
-请基于以下剧本信息，生成商业化方案。
-
-角色剧本：
-{characters}
-
-机制设计：
-{mechanism}
-
-请生成：
-1. 成本核算表（印刷、道具、包装、物流）
-2. 定价策略（成本加成法 vs 市场竞品对比）
-3. 销售渠道（线上：淘宝/闲鱼/小红书；线下：剧本杀店/桌游吧）
-4. 利润估算（按销量分档：100/500/1000套）
-5. 上市时机建议（节假日、剧本杀旺季）
-
-格式：Markdown，包含表格
-"""
+        """构建商业化 prompt（类型化）"""
+        return self._loader.stage5_marketing(
+            characters_content=characters,
+            mechanism_content=mechanism,
+            story_type=self.state.story_type or "mechanic",
+            is_prototype=self.state.is_prototype,
+        )
 
     def run_stage_6(self) -> bool:
         """阶段6：印刷生产
