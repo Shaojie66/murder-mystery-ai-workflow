@@ -71,11 +71,11 @@ export default function Dashboard() {
     e.preventDefault()
     if (!newName.trim()) return
     try {
-      await createProject({ name: newName.trim(), story_type: newType, is_prototype: newPrototype })
+      const result = await createProject({ name: newName.trim(), story_type: newType, is_prototype: newPrototype })
       setShowCreate(false)
       setNewName('')
       loadProjects()
-      navigate(`/projects/${encodeURIComponent(newName.trim())}`)
+      navigate(`/projects/${encodeURIComponent(result.name)}`)
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : '创建失败')
     }
