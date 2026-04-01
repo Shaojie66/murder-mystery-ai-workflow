@@ -170,8 +170,6 @@ class PhaseRunner:
 
         except Exception as e:
             self.console.print(f"[red]阶段1失败：{e}[/red]")
-            import traceback
-            traceback.print_exc()
             return False
 
     def _build_stage1_prompt(self) -> str:
@@ -1029,14 +1027,30 @@ Phase 1 扩写内容：
                 self.console.print("[green]✓ 审计通过，所有 P0 问题已清除[/green]")
                 return True
             elif force:
+                last = all_audit_rounds[-1]
+                p0_summaries = self._extract_p0_summaries(last["r1"], last["r2"], last["r3"])
                 self.console.print(f"[yellow]⚠ --force 模式：仍有 {unresolved_p0} 个未解决 P0（{len(known_p0s)} 个已标记为已知可接受）[/yellow]")
+                if p0_summaries:
+                    self.console.print("[yellow]被忽略的 P0 问题：[/yellow]")
+                    for s in p0_summaries:
+                        self.console.print(f"[yellow]{s}[/yellow]")
+                else:
+                    self.console.print(f"[dim]详细问题见 audit_report.md[/dim]")
                 return True
             elif unresolved_p0 == 0:
                 self.console.print(f"[yellow]⚠ 仍有 {final_p0} 个 P0，但全部已标记为已知可接受（.known_p0）[/yellow]")
                 self.console.print("[dim]使用 --force 可强制推进，或编辑 .known_p0 移除标记[/dim]")
                 return True
             else:
+                last = all_audit_rounds[-1]
+                p0_summaries = self._extract_p0_summaries(last["r1"], last["r2"], last["r3"])
                 self.console.print(f"[yellow]最终仍有 {unresolved_p0} 个未解决 P0（{len(known_p0s)} 个已标记为已知可接受）[/yellow]")
+                if p0_summaries:
+                    self.console.print("[yellow]未解决的 P0 问题：[/yellow]")
+                    for s in p0_summaries:
+                        self.console.print(f"[yellow]{s}[/yellow]")
+                else:
+                    self.console.print(f"[dim]详细问题见 audit_report.md[/dim]")
                 self.console.print(f"[dim]在 .known_p0 文件中添加 P0 描述可将其标记为已知可接受[/dim]")
                 return False
 
@@ -1266,6 +1280,31 @@ Phase 1 扩写内容：
     def _count_all_p0_issues(self, r1: str, r2: str, r3: str) -> int:
         """统计三轮审计的 P0 总数。"""
         return self._count_p0_issues(r1) + self._count_p0_issues(r2) + self._count_p0_issues(r3)
+
+    def _extract_p0_summaries(self, r1: str, r2: str, r3: str, max_per_round: int = 3) -> list[str]:
+        """从三轮审计响应中提取 P0 问题描述（最多返回 max_per_round*3 条）。"""
+        summaries = []
+        for label, content in [("矩阵检查", r1), ("机制检查", r2), ("结局检查", r3)]:
+            # 匹配 markdown 表格行：| ... | P0 | ... | 描述 | ... |
+            # 严重程度列可能是第3列，描述列可能是第5列
+            lines = content.splitlines()
+            round_summaries = []
+            for line in lines:
+                if not (line.startswith("|") and "p0" in line.lower()):
+                    continue
+                # 分割表格单元格
+                cells = [c.strip().strip("**") for c in line.split("|")]
+                if len(cells) < 5:
+                    continue
+                # cells[0] 是左侧空白，cells[1] 问题ID, cells[2] 维度, cells[3] 严重程度, cells[4] 事件, cells[5] 问题描述...
+                severity = cells[3].lower() if len(cells) > 3 else ""
+                if "p0" not in severity:
+                    continue
+                desc = cells[5] if len(cells) > 5 else (cells[4] if len(cells) > 4 else "")
+                if desc:
+                    round_summaries.append(f"  [{label}] {desc}")
+            summaries.extend(round_summaries[:max_per_round])
+        return summaries[:max_per_round * 3]
 
     def _show_cost_warning(self, cost: float):
         """显示成本警告"""

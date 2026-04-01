@@ -15,6 +15,7 @@ export default function PhaseExecution() {
   const [totalCost, setTotalCost] = useState(0)
   const [complete, setComplete] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [forceAudit, setForceAudit] = useState(false)
   const outputRef = useRef<HTMLDivElement>(null)
   const projectName = decodeURIComponent(name || '')
   const stageNum = parseInt(stage || '0')
@@ -45,7 +46,7 @@ export default function PhaseExecution() {
 
     let url: string
     if (mode === 'expand') url = `/api/projects/${encodeURIComponent(projectName)}/expand`
-    else if (mode === 'audit') url = `/api/projects/${encodeURIComponent(projectName)}/audit`
+    else if (mode === 'audit') url = `/api/projects/${encodeURIComponent(projectName)}/audit${forceAudit ? '?force=true' : ''}`
     else url = `/api/projects/${encodeURIComponent(projectName)}/phases/${stageNum}/run`
 
     const controller = new AbortController()
@@ -186,6 +187,27 @@ export default function PhaseExecution() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          {mode === 'audit' && (
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontFamily: "'Crimson Pro', serif",
+                fontSize: '13px',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={forceAudit}
+                onChange={(e) => setForceAudit(e.target.checked)}
+                style={{ accentColor: 'var(--accent-crimson)' }}
+              />
+              强制推进（忽略 P0）
+            </label>
+          )}
           {totalCost > 0 && (
             <span
               style={{

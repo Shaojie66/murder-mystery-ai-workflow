@@ -166,7 +166,7 @@ async def run_expand(project_name: str):
 
 
 @router.post("/audit")
-async def run_audit(project_name: str):
+async def run_audit(project_name: str, force: bool = False):
     """Run full audit with SSE streaming."""
     _validate_project_name(project_name)
     from murder_wizard.core.sse_manager import sse_manager
@@ -182,7 +182,7 @@ async def run_audit(project_name: str):
         async def run_and_emit():
             nonlocal task_result
             try:
-                await runner.run_audit()
+                await runner.run_audit(force=force)
             except BaseException as e:
                 task_result = e
             finally:
