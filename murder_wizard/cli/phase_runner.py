@@ -20,6 +20,15 @@ from murder_wizard.wizard.truth_files import TruthFileManager
 class PhaseRunner:
     """阶段执行器"""
 
+    STAGE_2_REQUIRED_ARTIFACTS = (
+        "information_matrix.md",
+        "background.md",
+        "characters.md",
+        "scripts_b.md",
+        "dm_manual.md",
+        "endings.md",
+    )
+
     def __init__(self, session: SessionManager, state: MurderWizardState, console: Console):
         self.session = session
         self.state = state
@@ -172,21 +181,6 @@ class PhaseRunner:
             self.console.print(f"[red]阶段1失败：{e}[/red]")
             return False
 
-    def _build_stage1_prompt(self) -> str:
-        """构建阶段1 Q2 prompt（用于 backward compat）"""
-        is_prototype = self.state.is_prototype
-        event_count = 3 if is_prototype else 7
-        char_count = 2 if is_prototype else 6
-
-        return self._loader.stage1_q2_design(
-            brief_content=self.state.outline or "",
-            story_type=self.state.story_type or "mechanic",
-            is_prototype=is_prototype,
-            q1_result="",  # backward compat
-            event_count=event_count,
-            char_count=char_count,
-        )
-
     def run_stage_2(self) -> bool:
         """阶段2：剧本创作 — 完整 Q1-Q6  pipeline
 
@@ -205,17 +199,7 @@ class PhaseRunner:
             self.console.print("[red]请先完成阶段1[/red]")
             return False
 
-        # Check all Phase 2 artifacts
-        phase2_artifacts = [
-            "information_matrix.md",
-            "background.md",
-            "characters.md",
-            "scripts_b.md",
-            "dm_manual.md",
-            "endings.md",
-        ]
-        existing = [f for f in phase2_artifacts if (self.session.project_path / f).exists()]
-        missing = [f for f in phase2_artifacts if f not in existing]
+        existing, missing = self._stage_2_artifact_status()
 
         if not missing:
             self.console.print("[green]阶段2已完成，跳过[/green]")
@@ -371,6 +355,18 @@ class PhaseRunner:
             import traceback
             traceback.print_exc()
             return False
+
+    def _stage_2_artifact_status(self) -> tuple[list[str], list[str]]:
+        """Return existing/missing Stage 2 artifacts to support resume logic."""
+        existing = [
+            artifact for artifact in self.STAGE_2_REQUIRED_ARTIFACTS
+            if (self.session.project_path / artifact).exists()
+        ]
+        missing = [
+            artifact for artifact in self.STAGE_2_REQUIRED_ARTIFACTS
+            if artifact not in existing
+        ]
+        return existing, missing
 
     def _build_matrix_prompt(self, outline: str, mechanism: str) -> str:
         """构建信息矩阵 prompt"""
@@ -1638,4 +1634,3 @@ Phase 1 扩写内容：
 5. 盗版防护策略
 
 格式：Markdown，包含时间线和里程碑"""
-

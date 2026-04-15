@@ -118,11 +118,20 @@ class PhaseRunnerWeb:
         if not self._cancelled:
             self.sse_queue.put_nowait({"event": event, "data": data})
 
-    def _emit_cost(self, tokens: int, cost: float) -> None:
-        """Emit cost update."""
-        self._total_cost += cost
-        self._total_tokens += tokens
-        self.emit("cost", {"tokens": tokens, "cost": cost, "total_cost": self._total_cost})
+    def _patch_runner(self, runner):
+        """Patch a PhaseRunner instance to emit cost events via SSE."""
+        original = runner._call_llm
+
+        def patched(prompt: str, system: str = "", operation: str = "llm_call"):
+            result = original(prompt, system, operation)
+            if result:
+                self._total_cost += result.cost
+                self._total_tokens += result.tokens_used
+                self.emit("cost", {"tokens": result.tokens_used, "cost": result.cost, "total_cost": self._total_cost})
+            return result
+
+        runner._call_llm = patched
+        runner.console.print = self.sse_console.print
 
     async def run_phase(self, stage: int, analyze: bool = False) -> bool:
         """Run a single phase (1-8). Returns success status."""
@@ -138,25 +147,7 @@ class PhaseRunnerWeb:
         # Create the real PhaseRunner but capture its LLM calls
         # We wrap _call_llm to intercept costs
         runner = PhaseRunner(self.session, state, self.sse_console)
-
-        # Monkey-patch the _call_llm to intercept cost events
-        # Note: _call_llm is synchronous, so we must NOT make this async
-        original_call_llm = runner._call_llm
-
-        def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
-            result = original_call_llm(prompt, system, operation)
-            if result:
-                # Emit cost synchronously via queue
-                self._total_cost += result.cost
-                self._total_tokens += result.tokens_used
-                self.emit("cost", {"tokens": result.tokens_used, "cost": result.cost, "total_cost": self._total_cost})
-            return result
-
-        runner._call_llm = patched_call_llm
-
-        # Monkey-patch console.print to emit tokens
-        original_console_print = runner.console.print
-        runner.console.print = self.sse_console.print
+        self._patch_runner(runner)
 
         try:
             if stage == 1:
@@ -206,20 +197,7 @@ class PhaseRunnerWeb:
             return False
 
         runner = PhaseRunner(self.session, state, self.sse_console)
-
-        # Monkey-patch _call_llm to track costs
-        original_call_llm = runner._call_llm
-
-        def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
-            result = original_call_llm(prompt, system, operation)
-            if result:
-                self._total_cost += result.cost
-                self._total_tokens += result.tokens_used
-                self.emit("cost", {"tokens": result.tokens_used, "cost": result.cost, "total_cost": self._total_cost})
-            return result
-
-        runner._call_llm = patched_call_llm
-        runner.console.print = self.sse_console.print
+        self._patch_runner(runner)
 
         try:
             success = runner.run_audit(force=force)
@@ -242,19 +220,7 @@ class PhaseRunnerWeb:
             return False
 
         runner = PhaseRunner(self.session, state, self.sse_console)
-
-        original_call_llm = runner._call_llm
-
-        def patched_call_llm(prompt: str, system: str = "", operation: str = "llm_call"):
-            result = original_call_llm(prompt, system, operation)
-            if result:
-                self._total_cost += result.cost
-                self._total_tokens += result.tokens_used
-                self.emit("cost", {"tokens": result.tokens_used, "cost": result.cost, "total_cost": self._total_cost})
-            return result
-
-        runner._call_llm = patched_call_llm
-        runner.console.print = self.sse_console.print
+        self._patch_runner(runner)
 
         try:
             success = runner.run_expand()

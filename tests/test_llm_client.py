@@ -7,6 +7,7 @@ from murder_wizard.llm.client import (
     ClaudeAdapter,
     OpenAIAdapter,
     OllamaAdapter,
+    UnifiedLLMAdapter,
 )
 
 
@@ -84,3 +85,77 @@ class TestOllamaAdapter:
             mock.return_value = MagicMock()
             adapter = create_llm_adapter("ollama")
             assert adapter is not None
+
+
+class TestUnifiedLLMAdapter:
+    def test_init_valid_providers(self):
+        # anthropic 不需要 API key 环境变量（使用占位符）
+        for p in ("anthropic",):
+            adapter = UnifiedLLMAdapter(provider=p)
+            assert adapter.provider == p
+
+    def test_init_invalid_provider_raises(self):
+        with pytest.raises(ValueError, match="UnifiedLLMAdapter provider must be one of"):
+            UnifiedLLMAdapter(provider="gemini")
+
+    def test_extract_system_from_messages(self):
+        adapter = UnifiedLLMAdapter(provider="anthropic")
+        system, rest = adapter._extract_system([
+            {"role": "system", "content": "you are helpful"},
+            {"role": "user", "content": "hello"},
+        ])
+        assert system == "you are helpful"
+        assert rest == [{"role": "user", "content": "hello"}]
+
+    def test_extract_system_no_system(self):
+        adapter = UnifiedLLMAdapter(provider="anthropic")
+        system, rest = adapter._extract_system([{"role": "user", "content": "hello"}])
+        assert system == ""
+        assert rest == [{"role": "user", "content": "hello"}]
+
+    @patch.object(UnifiedLLMAdapter, "_anthropic_complete")
+    def test_openai_complete_routes_to_anthropic(self, mock_complete):
+        mock_complete.return_value = MagicMock()
+        adapter = UnifiedLLMAdapter(provider="anthropic")
+        messages = [{"role": "user", "content": "hi"}]
+        adapter.openai_complete(messages)
+        mock_complete.assert_called_once()
+        # messages 是位置参数，system 是关键字参数
+        _, kwargs = mock_complete.call_args
+        assert kwargs["system"] == ""
+
+    @patch.object(UnifiedLLMAdapter, "_anthropic_complete")
+    def test_openai_complete_extracts_system_from_messages(self, mock_complete):
+        mock_complete.return_value = MagicMock()
+        adapter = UnifiedLLMAdapter(provider="anthropic")
+        messages = [
+            {"role": "system", "content": "act as a pirate"},
+            {"role": "user", "content": "hi"},
+        ]
+        adapter.openai_complete(messages)
+        args, kwargs = mock_complete.call_args
+        assert kwargs["system"] == "act as a pirate"
+        # messages 是第一个位置参数
+        assert args[0] == [{"role": "user", "content": "hi"}]
+
+    @patch.object(UnifiedLLMAdapter, "_setup_client")
+    @patch.object(UnifiedLLMAdapter, "_openai_complete")
+    def test_anthropic_complete_routes_to_openai(self, mock_complete, mock_setup):
+        # ollama 不需要真实 API key，用它来验证路由到 _openai_complete
+        mock_complete.return_value = MagicMock()
+        adapter = UnifiedLLMAdapter(provider="ollama")
+        adapter.anthropic_complete("hello", system="be friendly")
+        mock_complete.assert_called_once()
+        args, kwargs = mock_complete.call_args
+        # system 成为 messages[0] 的 system 角色
+        assert args[0][0]["role"] == "system"
+        assert args[0][0]["content"] == "be friendly"
+
+    @patch.object(UnifiedLLMAdapter, "_anthropic_complete")
+    def test_anthropic_complete_passes_system_to_anthropic(self, mock_complete):
+        mock_complete.return_value = MagicMock()
+        adapter = UnifiedLLMAdapter(provider="anthropic")
+        adapter.anthropic_complete("hello", system="act as a pirate")
+        args, kwargs = mock_complete.call_args
+        assert kwargs["system"] == "act as a pirate"
+        assert args[0] == [{"role": "user", "content": "hello"}]

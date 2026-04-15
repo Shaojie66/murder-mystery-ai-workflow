@@ -349,7 +349,7 @@ class OllamaAdapter(LLMAdapter):
             except Exception as e:
                 raise
 
-        raise RuntimeError(f"Ollama 调用失败（已重试 {max_retries} 次）：{e}")
+        raise RuntimeError(f"Ollama 调用失败（已重试 {DEFAULT_MAX_RETRIES} 次）：{e}")
 
     def complete_streaming(self, prompt: str, system: str = "") -> Iterator[str]:
         """Ollama 流式输出"""
@@ -409,24 +409,264 @@ def create_llm_adapter(provider: str = None, settings: dict = None) -> LLMAdapte
     if provider is None and settings:
         provider = settings.get("llm", {}).get("provider", "minimax")
     elif provider is None:
-        provider = "minimax"  # Default
+        provider = "claude"  # Default
 
     llm_config = settings.get("llm", {}) if settings else {}
 
     if provider == "claude":
-        api_key = llm_config.get("api_key") or os.environ.get("ANTHROPIC_API_KEY")
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or llm_config.get("api_key")
         return ClaudeAdapter(api_key=api_key)
     elif provider == "openai" or provider == "gpt":
-        api_key = llm_config.get("api_key") or os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get("OPENAI_API_KEY") or llm_config.get("api_key")
         return OpenAIAdapter(api_key=api_key)
     elif provider == "ollama":
-        base_url = llm_config.get("base_url") or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-        model = llm_config.get("model") or os.environ.get("OLLAMA_MODEL", "llama3")
+        base_url = os.environ.get("OLLAMA_BASE_URL") or llm_config.get("base_url") or "http://localhost:11434/v1"
+        model = os.environ.get("OLLAMA_MODEL") or llm_config.get("model") or "llama3"
         return OllamaAdapter(base_url=base_url, model=model)
     elif provider == "minimax":
-        api_key = llm_config.get("api_key") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("MINIMAX_API_KEY", "")
-        base_url = llm_config.get("base_url") or os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic")
-        model = llm_config.get("model") or os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
+        api_key = os.environ.get("MINIMAX_API_KEY", "") or os.environ.get("ANTHROPIC_API_KEY") or llm_config.get("api_key")
+        base_url = os.environ.get("MINIMAX_BASE_URL") or llm_config.get("base_url") or "https://api.minimax.io/anthropic"
+        model = os.environ.get("MINIMAX_MODEL") or llm_config.get("model") or "MiniMax-M2.7"
         return MiniMaxAdapter(api_key=api_key, base_url=base_url, model=model)
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
+
+
+class UnifiedLLMAdapter:
+    """统一 LLM 适配器，同时暴露 OpenAI 和 Anthropic 调用风格。
+
+    支持两种调用方式：
+      - openai_complete(messages)  → messages = [{"role": "user", "content": "..."}]
+      - anthropic_complete(prompt, system="")  → 分离的 system 参数
+
+    内部根据 provider 参数选择实际使用的 SDK：
+      - "anthropic" → Anthropic SDK（system 作为独立参数）
+      - "openai"   → OpenAI SDK（system 转为 messages[0] 的 system 角色）
+      - "minimax"  → Anthropic SDK 格式 + MiniMax 端点
+      - "ollama"   → OpenAI SDK 格式 + 自定义 base_url
+
+    用法示例：
+      adapter = UnifiedLLMAdapter(provider="anthropic", model="claude-3-5-sonnet-20241022")
+
+      # OpenAI 风格
+      response = adapter.openai_complete([{"role": "user", "content": "hello"}])
+
+      # Anthropic 风格
+      response = adapter.anthropic_complete("hello", system="You are a helpful assistant.")
+    """
+
+    PROVIDERS = {"anthropic", "openai", "ollama", "minimax"}
+
+    def __init__(
+        self,
+        provider: str = "anthropic",
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        extra_headers: Optional[dict] = None,
+    ):
+        if provider not in self.PROVIDERS:
+            raise ValueError(f"UnifiedLLMAdapter provider must be one of {self.PROVIDERS}, got: {provider!r}")
+
+        self.provider = provider
+        self.model = model
+        self.base_url = base_url
+        self.extra_headers = extra_headers or {}
+        self._setup_client(api_key)
+
+    def _setup_client(self, api_key: Optional[str]):
+        if self.provider == "anthropic":
+            from anthropic import Anthropic
+            self._client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+            self.model = self.model or os.environ.get("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+
+        elif self.provider == "openai":
+            from openai import OpenAI
+            self._client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
+            self.model = self.model or os.environ.get("OPENAI_MODEL", "gpt-4o")
+
+        elif self.provider == "minimax":
+            from anthropic import Anthropic
+            self._client = Anthropic(
+                api_key=api_key or os.environ.get("MINIMAX_API_KEY", "") or os.environ.get("ANTHROPIC_API_KEY", ""),
+                base_url=self.base_url or os.environ.get("MINIMAX_BASE_URL", "https://api.minimax.io/anthropic"),
+            )
+            self.model = self.model or os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
+
+        elif self.provider == "ollama":
+            from openai import OpenAI
+            self._client = OpenAI(
+                api_key=api_key or os.environ.get("OLLAMA_API_KEY") or "ollama",
+                base_url=self.base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+                default_headers=self.extra_headers,
+            )
+            self.model = self.model or os.environ.get("OLLAMA_MODEL", "llama3")
+
+    def openai_complete(self, messages: list[dict], max_tokens: int = DEFAULT_MAX_TOKENS) -> LLMResponse:
+        """OpenAI 风格的 chat completions 调用。
+
+        Args:
+            messages: [{"role": "user"|"system"|"assistant", "content": "..."}]
+            max_tokens: 最大输出 token 数
+
+        Returns:
+            LLMResponse — content / tokens_used / cost / model
+        """
+        if self.provider == "anthropic" or self.provider == "minimax":
+            # 把 messages 里第一个 system 角色抽出来，其余不变
+            system, rest = self._extract_system(messages)
+            return self._anthropic_complete(rest, system=system, max_tokens=max_tokens)
+        else:
+            # openai / ollama — 直接透传
+            return self._openai_complete(messages, max_tokens=max_tokens)
+
+    def anthropic_complete(
+        self,
+        prompt: str,
+        system: str = "",
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+    ) -> LLMResponse:
+        """Anthropic 风格的 messages.create 调用。
+
+        Args:
+            prompt: 用户消息内容
+            system: 系统提示（Anthropic 独立参数）
+            max_tokens: 最大输出 token 数
+
+        Returns:
+            LLMResponse — content / tokens_used / cost / model
+        """
+        messages = [{"role": "user", "content": prompt}]
+        if self.provider == "anthropic" or self.provider == "minimax":
+            return self._anthropic_complete(messages, system=system, max_tokens=max_tokens)
+        else:
+            # openai / ollama — 把 system 转成 messages[0] 的 system 角色
+            if system:
+                messages = [{"role": "system", "content": system}] + messages
+            return self._openai_complete(messages, max_tokens=max_tokens)
+
+    # -------------------------------------------------------------------------
+
+    def _extract_system(self, messages: list[dict]) -> tuple[str, list[dict]]:
+        """从 messages 列表中提取 system 角色，返回 (system_content, rest_messages)。"""
+        system = ""
+        rest = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                system = msg.get("content", "")
+            else:
+                rest.append(msg)
+        return system, rest
+
+    def _anthropic_complete(
+        self,
+        messages: list[dict],
+        system: str = "",
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+    ) -> LLMResponse:
+        """内部：Anthropic SDK 调用路径。"""
+        import anthropic
+
+        for attempt in range(DEFAULT_MAX_RETRIES):
+            try:
+                response = self._client.messages.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=messages,
+                )
+                content = response.content[0].text
+                input_tokens = response.usage.input_tokens
+                output_tokens = response.usage.output_tokens
+                total_tokens = input_tokens + output_tokens
+
+                cost = (
+                    (input_tokens / 1_000_000) * CLAUDE_PRICING_INPUT
+                    + (output_tokens / 1_000_000) * CLAUDE_PRICING_OUTPUT
+                )
+                if self.provider == "ollama":
+                    cost = 0.0  # 本地运行零成本
+
+                return LLMResponse(
+                    content=content,
+                    tokens_used=total_tokens,
+                    cost=cost,
+                    model=self.model,
+                )
+            except anthropic.RateLimitError:
+                if attempt < DEFAULT_MAX_RETRIES - 1:
+                    time.sleep(DEFAULT_BASE_DELAY * (2 ** attempt))
+                else:
+                    raise
+            except Exception:
+                raise
+
+        # 不可能到达（上一轮已 raise），为静态分析加保险
+        raise RuntimeError("Anthropic 调用失败（已达最大重试次数）")
+
+    def _openai_complete(self, messages: list[dict], max_tokens: int = DEFAULT_MAX_TOKENS) -> LLMResponse:
+        """内部：OpenAI SDK 调用路径（ollama / openai / minimax 通用）。"""
+        from openai import RateLimitError, APIError
+
+        for attempt in range(DEFAULT_MAX_RETRIES):
+            try:
+                response = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                )
+                content = response.choices[0].message.content
+                tokens = response.usage.total_tokens
+                cost = (tokens / 1_000_000) * OPENAI_PRICING
+                if self.provider == "ollama":
+                    cost = 0.0  # 本地运行零成本
+
+                return LLMResponse(
+                    content=content,
+                    tokens_used=tokens,
+                    cost=cost,
+                    model=self.model,
+                )
+            except (RateLimitError, APIError):
+                if attempt < DEFAULT_MAX_RETRIES - 1:
+                    time.sleep(DEFAULT_BASE_DELAY * (2 ** attempt))
+                else:
+                    raise
+            except Exception:
+                raise
+
+        raise RuntimeError("OpenAI 调用失败（已达最大重试次数）")
+
+    def openai_stream(self, messages: list[dict]) -> Iterator[str]:
+        """OpenAI 风格的流式调用。"""
+        if self.provider in ("anthropic", "minimax"):
+            system, rest = self._extract_system(messages)
+            yield from self._anthropic_stream(rest, system=system)
+        else:
+            yield from self._openai_stream(messages)
+
+    def anthropic_stream(self, prompt: str, system: str = "") -> Iterator[str]:
+        """Anthropic 风格的流式调用。"""
+        messages = [{"role": "user", "content": prompt}]
+        if self.provider in ("anthropic", "minimax"):
+            yield from self._anthropic_stream(messages, system=system)
+        else:
+            full = [{"role": "system", "content": system}] + messages if system else messages
+            yield from self._openai_stream(full)
+
+    def _anthropic_stream(self, messages: list[dict], system: str = "") -> Iterator[str]:
+        for event in self._client.messages.create(
+            model=self.model, max_tokens=4096, system=system, messages=messages, stream=True
+        ):
+            if event.type == "content_block_delta":
+                if hasattr(event.delta, "type") and event.delta.type == "thinking_delta":
+                    continue
+                if event.delta.text:
+                    yield event.delta.text
+
+    def _openai_stream(self, messages: list[dict]) -> Iterator[str]:
+        for event in self._client.chat.completions.create(
+            model=self.model, messages=messages, stream=True
+        ):
+            if event.choices and event.choices[0].delta.content:
+                yield event.choices[0].delta.content
