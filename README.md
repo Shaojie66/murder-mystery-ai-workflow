@@ -1,292 +1,191 @@
-# murder-wizard
+# Murder Wizard — Multi-Stage LLM Agent Workflow for Creative Content Generation
 
-> 一个人 + AI，从灵感到商业化发布的剧本杀创作工具。
-
-[![PyPI version](https://img.shields.io/pypi/v/murder-wizard.svg)](https://pypi.org/project/murder-wizard/)
-[![Python](https://img.shields.io/pypi/pyversions/murder-wizard.svg)](https://pypi.org/project/murder-wizard/)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/murder-wizard.svg)](https://pypi.org/project/murder-wizard/)
+
+English | [中文](./README_CN.md)
 
 ---
 
-## 两种使用方式
+## Overview
 
-| 方式 | 适用场景 | 入口 |
-|------|---------|------|
-| **CLI** | 本地创作、自动化脚本 | `murder-wizard <command>` |
-| **Web** | 浏览器管理、SSE实时预览、团队协作 | `murder-wizard-web` |
+Murder Wizard is a production-grade **multi-stage LLM agent system** that automates the end-to-end creative workflow for narrative game design — from initial concept to production-ready assets. It implements an 8-phase pipeline orchestrating multiple LLM calls with state management, context tracking, and consistency auditing.
+
+Built as both a CLI tool and a full-stack web application, it demonstrates practical engineering patterns for building reliable LLM-powered applications.
 
 ---
 
-## 安装
+## Technical Highlights
+
+### Multi-Stage Agent Orchestration
+- **8-phase stateful workflow** with explicit phase boundaries, each phase producing structured output artifacts
+- **Checkpoint / resume support** — interrupt at any phase and resume from the exact state
+- **Immutability** — historical state snapshots are automatically backed up and never overwritten
+- **Consistency auditing** — cross-phase fact checking to detect plot holes and narrative contradictions
+
+### LLM Abstraction Layer
+- **Multi-provider support**: Anthropic Claude, OpenAI GPT, local Ollama, and MiniMax through a unified interface
+- **Prompt engineering library** — domain-specific prompt templates for each creative phase
+- **Token cost tracking** — per-phase, per-project API usage logging and cost analytics
+- **Response caching** — deduplication of identical LLM calls to reduce costs
+
+### Full-Stack Architecture
+- **CLI**: Python package installable via `pip`, with typed command interfaces
+- **Web frontend**: React + Vite with SSE (Server-Sent Events) for streaming LLM output
+- **Web backend**: Python API server serving both the frontend and orchestration logic
+- **State management**: JSON-based project state with file-system persistence
+
+### Engineering Practices
+- **PyPI distribution** — packaged and published as `murder-wizard`
+- **Docker deployment** — one-command startup via `docker-compose`
+- **Test suite** — unit tests covering core workflow logic
+- **A/B testing infrastructure** — landing page variant testing built into the web app
+
+---
+
+## Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   CLI (Python)  │     │  Web Frontend    │     │   LLM Providers │
+│                 │     │  (React + Vite)  │     │                 │
+│  - init         │◄───►│  - Dashboard     │◄───►│  - Claude       │
+│  - phase 1-8    │ SSE │  - Project view  │HTTP │  - OpenAI       │
+│  - expand       │     │  - SSE streaming │     │  - Ollama       │
+│  - audit        │     │  - A/B testing   │     │  - MiniMax      │
+└────────┬────────┘     └────────┬─────────┘     └─────────────────┘
+         │                       │
+         ▼                       ▼
+┌──────────────────────────────────────────┐
+│           Core Orchestration Layer       │
+│  - Phase engine      - State management │
+│  - Prompt templates  - Cost tracking     │
+│  - Audit system      - Caching           │
+└──────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────┐
+│        File-system Project Store         │
+│  - Markdown artifacts  - JSON state     │
+│  - Immutable backups   - Cost logs       │
+└──────────────────────────────────────────┘
+```
+
+---
+
+## Quick Start
 
 ### CLI
 
 ```bash
 pip install murder-wizard
-```
 
-### Web 版
+# Initialize a new project (prototype mode)
+murder-wizard init myproject --prototype
 
-```bash
-cd murder_wizard_web
-# 后端
-cd backend && pip install -r requirements.txt
-# 前端
-cd ../frontend && npm install
-```
+# Run phases sequentially
+murder-wizard phase myproject 1   # Mechanism design
+murder-wizard phase myproject 2   # Story writing
+murder-wizard phase myproject 3   # Visual assets
 
----
-
-## 快速开始
-
-### CLI 模式
-
-```bash
-# 1. 初始化项目（原型模式）
-murder-wizard init myproject --type mechanic --prototype
-
-# 2. 运行阶段 1-3
-murder-wizard phase myproject 1   # 机制设计
-murder-wizard phase myproject 2   # 剧本创作
-murder-wizard phase myproject 3   # 视觉物料
-
-# 3. 扩写为完整 6 人版
+# Expand prototype to full 6-player version
 murder-wizard expand myproject
 
-# 4. 继续完整阶段
-murder-wizard phase myproject 4   # 用户测试
-murder-wizard phase myproject 4 --analyze   # 分析反馈
-murder-wizard phase myproject 5   # 商业化
-murder-wizard phase myproject 6   # 印刷生产
+# Continue remaining phases
+murder-wizard phase myproject 4   # Playtesting
+murder-wizard phase myproject 5   # Commercialization
+murder-wizard phase myproject 6   # Print production
 
-# 查看状态
-murder-wizard status myproject
+# Audit for consistency before release
+murder-wizard audit myproject
 ```
 
-### Web 模式
+### Web Application
 
 ```bash
-# 终端 1：后端
-cd murder_wizard_web/backend
-python main.py
-
-# 终端 2：前端
-cd murder_wizard_web/frontend
-npm run dev
-
-# 浏览器打开
-http://localhost:5173
-```
-
----
-
-## 工作流 8 阶段
-
-```
-阶段1：机制设计 ──→ 阶段2：剧本创作 ──→ 阶段3：视觉物料
-     │                    │                    │
-     ▼                    ▼                    ▼
-  mechanism.md      characters.md         image-prompts.md
-                 + information_matrix.md
-
-                                           │
-              扩写 expand ──→ 阶段4：用户测试
-                   │                │
-                   │                ▼
-                   │          test_guide.md
-                   │          + iteration_report.md
-                   │                │
-                   ▼                ▼
-              阶段5：商业化 ──→ 阶段6：印刷生产
-                   │                │
-                   ▼                ▼
-             commercial.md      script.pdf
-                             + clue_cards.pdf
-                             + print_order.json
-                                           │
-              阶段7：宣发内容 ──→ 阶段8：社区运营
-```
-
----
-
-## 全部命令（CLI）
-
-| 命令 | 说明 |
-|------|------|
-| `murder-wizard init <name>` | 初始化项目 |
-| `murder-wizard status <name>` | 查看状态 |
-| `murder-wizard phase <name> <n>` | 运行阶段 1-8 |
-| `murder-wizard expand <name>` | 原型扩写为完整版 |
-| `murder-wizard resume <name>` | 从中断处继续 |
-| `murder-wizard audit <name>` | 完整穿帮审计（上线前必做） |
-| `murder-wizard cache <name>` | 查看/清空 LLM 缓存 |
-
----
-
-## Web 功能
-
-### 页面路由
-
-| 路由 | 说明 |
-|------|------|
-| `/` | 项目列表仪表盘 |
-| `/projects/:name` | 项目详情 + 8阶段进度 |
-| `/projects/:name/phase/:n` | 阶段执行（SSE流式输出） |
-| `/projects/:name/matrix` | 信息矩阵可视化编辑器 |
-| `/projects/:name/files/:f` | Monaco编辑器（Markdown） |
-| `/projects/:name/audit` | 穿帮审计报告 |
-| `/projects/:name/costs` | API消耗统计 |
-| `/metrics` | 落地页A/B测试统计 |
-| `/settings` | LLM / Notion / Obsidian 配置 |
-| `/subscription` | 订阅管理（Pro版本） |
-| `/landing` | 落地页（随机分配A/B） |
-| `/landing-a` | 落地页A（技术向） |
-| `/landing-b` | 落地页B（新手友好） |
-
-### 落地页 A/B 测试
-
-访问 `/landing` 随机分配，或通过 `?variant=a` / `?variant=b` 强制指定版本。
-
----
-
-## 配置
-
-### 环境变量
-
-| 环境变量 | 默认值 | 说明 |
-|----------|--------|------|
-| `LLM_PROVIDER` | `claude` | `claude` / `openai` / `ollama` / `minimax` |
-| `ANTHROPIC_API_KEY` | - | Claude API Key（provider=claude时） |
-| `OPENAI_API_KEY` | - | OpenAI API Key（provider=openai时） |
-| `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | Ollama 服务地址（provider=ollama时） |
-| `OLLAMA_MODEL` | `llama3` | Ollama 模型名 |
-
-> **注**：API Key 也可通过 Web 界面设置（`/settings`），保存在 `~/.murder-wizard/settings.json`。
-
-### LLM 提供商
-
-| 提供商 | 说明 |
-|--------|------|
-| `claude` | Anthropic Claude（默认，需要 ANTHROPIC_API_KEY） |
-| `openai` | OpenAI GPT-4o（需要 OPENAI_API_KEY） |
-| `ollama` | 本地 Ollama（零成本，保护隐私） |
-| `minimax` | MiniMax（需要 MINIMAX_API_KEY） |
-
----
-
-## 输出产物
-
-```
-~/.murder-wizard/projects/<name>/
-├── outline.md              # 大纲
-├── mechanism.md           # 机制设计
-├── information_matrix.md   # 信息矩阵（Markdown）
-├── characters.md          # 角色剧本
-├── image-prompts.md       # 图像提示词
-├── test_guide.md         # 测试指南
-├── iteration_report.md    # 迭代报告
-├── commercial.md         # 商业化方案
-├── script.pdf           # 剧本 PDF
-├── materials/            # 视觉物料
-│   ├── 角色图/
-│   ├── 海报/
-│   └── 卡牌/
-├── state/                # JSON 真相文件
-│   ├── character_matrix.json  # 角色×事件信息矩阵
-│   └── .backups/         # 自动备份（immutable）
-├── cost.log             # API 消耗日志
-└── audit_report.md      # 完整穿帮审计报告
-```
-
----
-
-## 原型模式
-
-默认开启原型模式（2人 + 3事件），先快速验证核心机制，再通过 `expand` 扩写为完整的 6 人 + 5-7 事件版本。
-
-```bash
-# 原型模式（默认）
-murder-wizard init myproject
-
-# 完整模式（直接6人）
-murder-wizard init myproject --full --type mechanic
-```
-
----
-
-## Pro 版本（订阅制）
-
-| 功能 | 免费版 | Pro版（¥29/月） |
-|------|--------|----------------|
-| 8阶段工作流 | ✅ | ✅ |
-| 本地存储 | ✅ | ✅ |
-| 云端存储 | ❌ | ✅ |
-| 团队协作 | ❌ | ✅（最多10人） |
-| AI 穿帮检测 | ❌ | ✅ |
-| 高级模板库 | ❌ | ✅ |
-| 优先 LLM 通道 | ❌ | ✅ |
-| 专属客服 | ❌ | ✅ |
-
-订阅管理入口：`/subscription` 或 Web 界面侧边栏。
-
----
-
-## 文档
-
-- [工作流详解](./docs/) — 8阶段完整流程文档
-- [模板库](./templates/) — 可直接复用的模板
-- [Prompt库](./prompts/) — AI创作提示词
-- [Pro版探索计划](./discovery_plan.md) — GUI+Web升级产品探索
-- [CHANGELOG](./CHANGELOG.md) — 版本变更记录
-
----
-
-## 开发
-
-```bash
-# 安装
-git clone https://github.com/Shaojie66/murder-mystery-ai-workflow.git
-cd murder-mystery-ai-workflow
-pip install -e .
-
-# CLI 测试
-pytest tests/ -v
-
-# Web 后端
+# Backend
 cd murder_wizard_web/backend
 pip install -r requirements.txt
-python main.py   # http://localhost:8000
+python main.py
 
-# Web 前端
-cd ../frontend
+# Frontend
+cd murder_wizard_web/frontend
 npm install
-npm run dev      # http://localhost:5173
+npm run dev
 
-# 生产构建
-cd ../frontend && npm run build
+# Open http://localhost:5173
 ```
 
 ---
 
-## Docker 部署
+## Tech Stack
 
-```bash
-# 一键启动（后端 + 前端）
-cd murder_wizard_web
-docker-compose up -d
+| Layer | Technologies |
+|-------|-------------|
+| **Language** | Python 3.9+, JavaScript / TypeScript |
+| **LLM Integration** | Anthropic SDK, OpenAI SDK, Ollama, prompt engineering |
+| **Backend** | Python (FastAPI-style), SSE streaming |
+| **Frontend** | React, Vite, Monaco Editor |
+| **Data / State** | JSON, Markdown, file-system persistence |
+| **DevOps** | Docker, docker-compose, PyPI packaging, pytest |
 
-# 查看日志
-docker-compose logs -f
+---
 
-# 停止
-docker-compose down
+## Project Structure
 
-# 环境变量（可选）
-LLM_PROVIDER=claude ANTHROPIC_API_KEY=sk-xxx docker-compose up -d
+```
+murder-mystery-ai-workflow/
+├── murder_wizard/          # Core Python package
+│   ├── phases/             # 8-phase workflow implementations
+│   ├── prompts/            # Prompt template library
+│   ├── llm/                # LLM provider abstraction layer
+│   ├── state/              # State management & persistence
+│   └── audit/              # Consistency auditing system
+├── murder_wizard_web/      # Full-stack web app
+│   ├── backend/            # Python API server
+│   └── frontend/           # React + Vite frontend
+├── templates/              # Reusable project templates
+├── tests/                  # Unit test suite
+├── docs/                   # Documentation
+├── pyproject.toml          # PyPI package config
+└── requirements.txt        # Dependencies
 ```
 
-前端访问：`http://localhost:3000`
-后端 API：`http://localhost:8000`
+---
+
+## Configuration
+
+```bash
+# Set LLM provider (default: claude)
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+
+# Or use local Ollama (free, private)
+export LLM_PROVIDER=ollama
+export OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+All settings can also be configured through the web UI at `/settings`.
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/Shaojie66/murder-mystery-ai-workflow.git
+cd murder-mystery-ai-workflow
+
+# Install in development mode
+pip install -e .
+
+# Run tests
+pytest tests/ -v
+
+# Start web app in dev mode
+cd murder_wizard_web/backend && python main.py &
+cd murder_wizard_web/frontend && npm run dev
+```
 
 ---
 
