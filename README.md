@@ -12,7 +12,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/Shaojie66/murder-mystery-ai-workflow?style=flat)](https://github.com/Shaojie66/murder-mystery-ai-workflow/stargazers)
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.10-blue?style=flat)](./pyproject.toml)
 [![Status](https://img.shields.io/badge/Status-Alpha-orange?style=flat)](./pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](./LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange?style=flat)](./LICENSE)
 [![Issues](https://img.shields.io/github/issues/Shaojie66/murder-mystery-ai-workflow?style=flat)](https://github.com/Shaojie66/murder-mystery-ai-workflow/issues)
 
 写剧本杀最怕的一件事：某个角色在某个时刻，说出了他当时还不该知道的事。故事梗概写完之后，分配秘密、写角色本、补线索、对时间线，每一步都在给这类穿帮制造机会。
@@ -267,6 +267,6 @@ npm run build
 - [本轮可靠性方案](./docs/reliability-mvp-plan.md) · [任务清单](./TODOS.md)：范围、验收与未完成项。
 - [工作流文档](./docs/) · [可复用模板](./templates/) · [提示词资料库](./prompts/)。
 - [变更记录](./CHANGELOG.md)：历史改动；当前功能以代码和入口为准。
-- [MIT 许可证](./LICENSE)。
+- [许可证](./LICENSE)：PolyForm Noncommercial 1.0.0。源码公开；个人、学习、教育、研究及其他非商业用途可按许可证免费使用；**商业使用需事先取得授权**，包括商业集成、付费服务、SaaS、企业内部业务流程或商业再分发。这不是 OSI 定义的开源许可证。
 
 用得上就 [Star 收藏](https://github.com/Shaojie66/murder-mystery-ai-workflow)。遇到问题请提 [Issue](https://github.com/Shaojie66/murder-mystery-ai-workflow/issues)，附复现步骤和隐去密钥、私人剧本内容后的日志；代码贡献请参考贡献指南。

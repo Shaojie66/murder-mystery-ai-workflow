@@ -68,4 +68,4 @@ Include:
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the same license as this project (PolyForm Noncommercial License 1.0.0, see LICENSE).

@@ -7,7 +7,7 @@ name = "murder-wizard"
 version = "0.6.0"
 description = "CLI wizard for 剧本杀 creation workflow"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "PolyForm-Noncommercial-1.0.0"}
 requires-python = ">=3.10"
 authors = [
     {name = "Shaojie Chen", email = "chenshaojie@example.com"}
@@ -17,7 +17,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

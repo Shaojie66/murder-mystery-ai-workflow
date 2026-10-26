@@ -12,7 +12,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/Shaojie66/murder-mystery-ai-workflow?style=flat)](https://github.com/Shaojie66/murder-mystery-ai-workflow/stargazers)
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.10-blue?style=flat)](./pyproject.toml)
 [![Status](https://img.shields.io/badge/Status-Alpha-orange?style=flat)](./pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat)](./LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-orange?style=flat)](./LICENSE)
 [![Issues](https://img.shields.io/github/issues/Shaojie66/murder-mystery-ai-workflow?style=flat)](https://github.com/Shaojie66/murder-mystery-ai-workflow/issues)
 
 The failure every murder-mystery author dreads: a character says something, at a moment when they could not yet know it. Once the synopsis is done, every step after it (assigning secrets, writing character books, adding clues, checking the timeline) is another chance for that mistake.
@@ -269,6 +269,6 @@ Tests use temporary directories and mocked model responses; they never read your
 - [Reliability plan for this iteration](./docs/reliability-mvp-plan.md) · [Task list](./TODOS.md): scope, acceptance and open items.
 - [Workflow docs](./docs/) · [Reusable templates](./templates/) · [Prompt library](./prompts/).
 - [Changelog](./CHANGELOG.md): history; current behaviour follows the code and entry points.
-- [MIT License](./LICENSE).
+- [License](./LICENSE): PolyForm Noncommercial 1.0.0. Source-available; free to use for permitted non-commercial purposes (personal, learning, education, research and other non-commercial use); **commercial use requires prior authorization**, including commercial integration, paid services, SaaS, internal business processes of a company, or commercial redistribution. This is not an OSI-defined open-source license.
 
 If it is useful to you, [Star it](https://github.com/Shaojie66/murder-mystery-ai-workflow). For problems, open an [Issue](https://github.com/Shaojie66/murder-mystery-ai-workflow/issues) with reproduction steps and logs with keys and private script content removed; for code contributions see the contributing guide.

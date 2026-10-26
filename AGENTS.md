@@ -158,7 +158,7 @@ expand：将原型扩写为完整版本（2人→6人，3事件→7事件，E4-E
 ├── AGENTS.md            # 本文件
 ├── CHANGELOG.md         # 版本记录
 ├── CONTRIBUTING.md      # 贡献指南
-├── LICENSE              # MIT 许可证
+├── LICENSE              # PolyForm Noncommercial 1.0.0（禁止商用）
 └── README.md            # 项目说明
 ```
 
