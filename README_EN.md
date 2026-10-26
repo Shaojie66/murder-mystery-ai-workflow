@@ -161,6 +161,18 @@ npm run dev
 
 Open the [local workbench](http://localhost:5173); the API docs are at [API docs](http://localhost:8000/docs). Docker setup and more API details are in the [web docs](./murder_wizard_web/README.md).
 
+### Interface preview
+
+These three images come from the project's real web interface, using a demo project called `foggy-harbor`. The project content is demo text. The audit report is rendered by the real audit pipeline, but the model reply behind it is scripted and does not represent any real model's audit result.
+
+| Project workbench | Information matrix editor |
+| --- | --- |
+| <img src="./docs/images/ui-workbench.png" alt="Project workbench: progress, artifact files and quick actions" width="420"> | <img src="./docs/images/ui-matrix.png" alt="Information matrix editor: knowledge states for 6 characters × 7 events" width="420"> |
+
+<p align="center">
+  <img src="./docs/images/ui-audit.png" alt="Audit report: status, input materials table and per-round status" width="640">
+</p>
+
 Task contract (events decide the outcome, not the HTTP status):
 
 - At most one write task per project at a time; a duplicate run gets 409.

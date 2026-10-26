@@ -159,6 +159,18 @@ npm run dev
 
 打开 [本地工作台](http://localhost:5173)，接口文档在 [API 文档](http://localhost:8000/docs)。Docker 配置和更多接口说明见 [Web 文档](./murder_wizard_web/README.md)。
 
+### 界面预览
+
+下面三张图来自本项目的真实 Web 界面，使用演示项目 `foggy-harbor`：作品内容是演示文本；审计报告由真实的审计流程渲染，但其中的模型回复是脚本化的，不代表任何真实模型的审计结果。
+
+| 项目工作台 | 信息矩阵编辑器 |
+| --- | --- |
+| <img src="./docs/images/ui-workbench.png" alt="项目工作台：创作进度、产物文件和快捷操作" width="420"> | <img src="./docs/images/ui-matrix.png" alt="信息矩阵编辑器：6 个角色 × 7 个事件的认知状态" width="420"> |
+
+<p align="center">
+  <img src="./docs/images/ui-audit.png" alt="穿帮审计报告：审计状态、输入材料表与轮次状态" width="640">
+</p>
+
 任务合同（以事件为准，而不是 HTTP 状态）：
 
 - 同一作品同一时刻只允许一个写入任务，重复运行返回 409。
