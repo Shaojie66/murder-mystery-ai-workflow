@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 type EventName =
   | 'page_view'
+  | 'page_leave'
   | 'cta_click'
   | 'modal_open'
   | 'email_submit'
@@ -18,6 +19,21 @@ interface EventParams {
   [key: string]: string | number | undefined
 }
 
+function getVisitId(): string {
+  // sessionStorage：同一标签页的一次访问内稳定；StrictMode 重新挂载拿到同一个 id
+  const KEY = 'mw_visit_id'
+  try {
+    let id = sessionStorage.getItem(KEY)
+    if (!id) {
+      id = Math.random().toString(36).slice(2) + Date.now().toString(36)
+      sessionStorage.setItem(KEY, id)
+    }
+    return id
+  } catch {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36)
+  }
+}
+
 // 轻量级分析追踪 hook
 // 使用 Plausible Analytics 格式，可无缝对接
 export function useAnalytics(variant: 'a' | 'b' | 'random' = 'random') {
@@ -30,6 +46,8 @@ export function useAnalytics(variant: 'a' | 'b' | 'random' = 'random') {
   const scroll100Fired = useRef(false)
   const startTime = useRef(Date.now())
   const pageViewFired = useRef(false)
+  // 一次访问一个 id：后端按它去重 page_view，React StrictMode 的重复挂载也只计一次
+  const visitId = useRef(getVisitId())
 
   const trackEvent = useCallback(
     (name: EventName, params?: EventParams) => {
@@ -66,6 +84,7 @@ export function useAnalytics(variant: 'a' | 'b' | 'random' = 'random') {
           event: name,
           variant,
           url: window.location.pathname,
+          visit_id: visitId.current,
           ...params,
         }),
       }).catch(() => {})
@@ -73,21 +92,20 @@ export function useAnalytics(variant: 'a' | 'b' | 'random' = 'random') {
     [variant]
   )
 
-  // 页面访问 — 只在首次挂载时触发一次，unmount 时发送 duration
+  // 页面访问：每次访问只发一次 page_view；离开时发 page_leave（带停留时长），它不算访问
   useEffect(() => {
-    if (pageViewFired.current) return
-    pageViewFired.current = true
-
-    trackEvent('page_view', {
-      referrer: document.referrer,
-      user_agent: navigator.userAgent,
-    })
+    if (!pageViewFired.current) {
+      pageViewFired.current = true
+      trackEvent('page_view', {
+        referrer: document.referrer,
+        user_agent: navigator.userAgent,
+      })
+    }
 
     startTime.current = Date.now()
 
     return () => {
-      // Only fire on unmount (user navigates away), not on re-renders
-      trackEvent('page_view', {
+      trackEvent('page_leave', {
         duration: Date.now() - startTime.current,
       })
     }

@@ -90,8 +90,8 @@ export function Modal({ isOpen, onClose, variant, onEmailSubmit }: ModalProps) {
           setEmail('')
         }, 2000)
       } else {
-        const data = await res.json()
-        setError(data.error === 'invalid_email' ? '请输入有效的邮箱地址' : '提交失败，请重试')
+        const data = await res.json().catch(() => ({}))
+        setError(data.detail === 'invalid_email' || data.error === 'invalid_email' ? '请输入有效的邮箱地址' : '提交失败，请重试')
       }
     } catch {
       setError('网络错误，请检查网络连接')
