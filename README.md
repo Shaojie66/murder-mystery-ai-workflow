@@ -168,7 +168,7 @@ npm run dev
 | <img src="./docs/images/ui-workbench.png" alt="项目工作台：创作进度、产物文件和快捷操作" width="420"> | <img src="./docs/images/ui-matrix.png" alt="信息矩阵编辑器：6 个角色 × 7 个事件的认知状态" width="420"> |
 
 <p align="center">
-  <img src="./docs/images/ui-audit.png" alt="穿帮审计报告：审计状态、输入材料表与轮次状态" width="640">
+  <img src="./docs/images/ui-audit.png" alt="穿帮审计报告：审计结论、三轮状态与按严重度分组的问题" width="640">
 </p>
 
 任务合同（以事件为准，而不是 HTTP 状态）：

@@ -170,7 +170,7 @@ These three images come from the project's real web interface, using a demo proj
 | <img src="./docs/images/ui-workbench.png" alt="Project workbench: progress, artifact files and quick actions" width="420"> | <img src="./docs/images/ui-matrix.png" alt="Information matrix editor: knowledge states for 6 characters × 7 events" width="420"> |
 
 <p align="center">
-  <img src="./docs/images/ui-audit.png" alt="Audit report: status, input materials table and per-round status" width="640">
+  <img src="./docs/images/ui-audit.png" alt="Audit report: verdict, per-round status and issues grouped by severity" width="640">
 </p>
 
 Task contract (events decide the outcome, not the HTTP status):
