@@ -1,14 +1,29 @@
 """Analytics API - tracks landing page A/B test events."""
 from datetime import datetime
 from typing import Optional, Any
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
-# In-memory storage for development
-# In production, use a proper database
+from core.jsonl_store import JsonlStore
+
+# 事件追加写入 ~/.murder-wizard/landing/events.jsonl，首次使用时回放；工具不自动删除。
 _events: list[dict] = []
+_store = JsonlStore("events.jsonl", "landing-event/1")
+_loaded = False
+_corrupt = 0
+
+
+def _ensure_loaded() -> None:
+    global _loaded, _corrupt
+    if _loaded:
+        return
+    records, _corrupt = _store.replay()
+    for r in records:
+        if isinstance(r.get("event"), str):
+            _events.append({k: v for k, v in r.items() if k != "schema"})
+    _loaded = True
 
 
 class TrackRequest(BaseModel):
@@ -38,6 +53,11 @@ async def track_event(data: TrackRequest):
         "props": data.props or {},
         "timestamp": datetime.utcnow().isoformat(),
     }
+    _ensure_loaded()
+    try:
+        _store.append(event_data)  # 先写盘再改内存
+    except OSError:
+        raise HTTPException(status_code=503, detail="storage_unavailable")
     _events.append(event_data)
     return {"status": "ok"}
 
@@ -52,6 +72,7 @@ async def get_events(
 
     Returns events in reverse chronological order (newest first).
     """
+    _ensure_loaded()
     filtered = _events
 
     if event_type:
@@ -70,6 +91,7 @@ async def get_events(
 @router.get("/summary")
 async def get_summary():
     """Get a summary of all tracked events for the A/B test dashboard."""
+    _ensure_loaded()
     return _get_summary(_events)
 
 
@@ -105,7 +127,7 @@ def _unique_submits(events: list[dict], variant: str) -> int:
 
 
 def _get_summary(events: list[dict]) -> dict:
-    """统计口径：访问数按 visit_id 去重；variant_a/b 是各版本的访问数；数据只在内存，重启即丢失。"""
+    """统计口径：访问数按 visit_id 去重；variant_a/b 是各版本的访问数；数据追加写盘，重启后回放。"""
     views_a, views_b = _unique_views(events, "a"), _unique_views(events, "b")
     durations = [e["duration"] for e in events if e["event"] == "page_leave" and e.get("duration")]
     return {
@@ -121,5 +143,6 @@ def _get_summary(events: list[dict]) -> dict:
         "avg_duration": (sum(durations) / len(durations)) if durations else 0,
         "conversion_rate_a": (_unique_submits(events, "a") / views_a * 100) if views_a else 0,
         "conversion_rate_b": (_unique_submits(events, "b") / views_b * 100) if views_b else 0,
-        "persisted": False,
+        "persisted": True,
+        "corrupt_lines": _corrupt,
     }

@@ -244,7 +244,7 @@ flowchart LR
 - **Image and video adapters are stubs.** The Jimeng and Hailuo adapters are unfinished; the visual stage only produces prompts.
 - **The Pro pages are product experiments.** Subscription endpoints are stubs; cloud storage, team collaboration and paid entitlements are not delivered.
 - **PDFs are drafts for review.** The layout is basic; check Chinese fonts, pagination and clue cards in the actual files before proofing.
-- **The web app is for local single-user use.** The token endpoint signs a JWT for any `user_id`, the settings endpoints have no authentication, and signups and statistics live only in memory; public or multi-user use needs real identity, isolation and persistence, see the [boundary notes](./docs/local-only-boundary.md) (in Chinese).
+- **The web app is for local single-user use.** The token endpoint signs a JWT for any `user_id`, the settings endpoints have no authentication, and so do the signup and statistics endpoints; public or multi-user use needs real identity, isolation and persistence, see the [boundary notes](./docs/local-only-boundary.md) (in Chinese).
 - **There is no validated outcome data.** There are no real playtest or audit-accuracy numbers yet, so this README claims no speed-up and no "no continuity errors".
 
 ## Development and contributing
