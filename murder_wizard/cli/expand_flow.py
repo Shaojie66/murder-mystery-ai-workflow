@@ -13,6 +13,7 @@ from typing import Callable, Optional
 
 from rich.markup import escape
 
+from murder_wizard.llm.client import LONG_OUTPUT_MAX_TOKENS
 from murder_wizard.prompts.loader import PromptRenderError
 from murder_wizard.wizard import expansion as X
 from murder_wizard.wizard.file_commit import CommitFailed, commit_files
@@ -65,9 +66,9 @@ class ExpandFlow:
         self._k += 1
         self._say(f"[cyan]第 {self._k}/{self.TOTAL_STEPS} 步：{escape(op)}[/cyan]")
         r = self.runner
-        cached = r._cache.get(op, prompt, system, r.llm.model) is not None
+        cached = r._cache.get(op, prompt, system, r.llm.model, max_tokens=LONG_OUTPUT_MAX_TOKENS) is not None
         try:
-            resp = r._call_llm(prompt, system=system, operation=op)
+            resp = r._call_llm(prompt, system=system, operation=op, max_tokens=LONG_OUTPUT_MAX_TOKENS)
         except Exception as e:  # noqa: BLE001
             raise ExpandStop(X.ExpandStatus.FAILED_CALL, [f"模型调用失败：{e}"], op) from e
         self.result.calls += 1
@@ -75,10 +76,14 @@ class ExpandFlow:
             self.result.cached_calls += 1
         else:
             self.result.cost += float(getattr(resp, "cost", 0.0) or 0.0)
-        problems = validate(resp.content)
+        if getattr(resp, "truncated", False):
+            # 明确的截断信号：不再靠"末段标题 + 最小正文"去猜
+            problems = [f"模型输出被单次输出上限（{LONG_OUTPUT_MAX_TOKENS} tokens）截断（stop_reason={resp.stop_reason}），内容不完整"]
+        else:
+            problems = validate(resp.content)
         if problems:
             try:
-                r._cache.invalidate(op, prompt, system, r.llm.model)
+                r._cache.invalidate(op, prompt, system, r.llm.model, max_tokens=LONG_OUTPUT_MAX_TOKENS)
             except Exception:  # noqa: BLE001
                 pass
             head, tail = resp.content[:160], resp.content[-160:]

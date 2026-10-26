@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from rich.console import Console
 
 from murder_wizard.cli.phase_runner import PhaseRunner
-from murder_wizard.llm.client import LLMResponse
+from murder_wizard.llm.client import LLMResponse, LONG_OUTPUT_MAX_TOKENS
 from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
 
@@ -308,7 +308,7 @@ def test_run_stage_2_sends_each_step_only_its_own_prompt(tmp_path):
     matrix_json = json.dumps(_matrix_data(), ensure_ascii=False)
     prompts: list[str] = []
 
-    def fake_llm(prompt, system="", operation="llm_call"):
+    def fake_llm(prompt, system="", operation="llm_call", max_tokens=None):
         prompts.append(prompt)
         if operation == "stage_2_matrix":
             return _response(f"```json\n{matrix_json}\n```")
@@ -464,7 +464,7 @@ def _attach_llm(runner, q1_responses: list[str]) -> dict:
     queue = list(q1_responses)
     calls = {"q1": 0, "other": 0, "prompts": []}
 
-    def complete(prompt, system=""):
+    def complete(prompt, system="", max_tokens=None):
         calls["prompts"].append(prompt)
         if _Q1_HEADING in prompt:
             calls["q1"] += 1
@@ -900,7 +900,7 @@ def _blank_then_good_llm(runner, heading: str, blank: str) -> dict:
     runner.llm.model = "mock-model"
     seen = {"target": 0}
 
-    def complete(prompt, system=""):
+    def complete(prompt, system="", max_tokens=None):
         if _Q1_HEADING in prompt:
             return _response(_VALID_JSON_TEXT)
         if heading in prompt:
@@ -955,7 +955,7 @@ def test_blank_reply_already_poisoned_in_the_cache_is_evicted_and_the_next_run_r
     seen = _blank_then_good_llm(runner, _STAGE_2_HEADINGS[1], "# 重新生成的内容")  # 模型第一次被问到时就给正常内容
     bg_prompt = runner._build_background_prompt("# 简报\n民国戏班旧案", _published_matrix_md())
     bg_system = runner._loader.system_script_writer("mechanic")
-    runner._cache.set("stage_2_background", bg_prompt, bg_system, "mock-model", _response(poison))
+    runner._cache.set("stage_2_background", bg_prompt, bg_system, "mock-model", _response(poison), max_tokens=LONG_OUTPUT_MAX_TOKENS)
 
     assert runner.run_stage_2() is False
     assert seen["target"] == 0, "第一次命中的是缓存里的空回复"

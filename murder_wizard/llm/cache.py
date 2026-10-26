@@ -45,16 +45,18 @@ class LLMCache:
             tmp.unlink(missing_ok=True)
             raise
 
-    def _make_key(self, operation: str, prompt: str, system: str, model: str) -> str:
+    def _make_key(self, operation: str, prompt: str, system: str, model: str, max_tokens: Optional[int] = None) -> str:
         """生成缓存键"""
         # 包含 operation 可以区分不同阶段的同名 prompt
         raw = f"{operation}|{model}|{system}|{prompt}"
+        if max_tokens is not None:  # 输出上限不同，结果不同；默认上限保持原键不变
+            raw += f"|mt={max_tokens}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
-    def get(self, operation: str, prompt: str, system: str, model: str) -> Optional[LLMResponse]:
+    def get(self, operation: str, prompt: str, system: str, model: str, max_tokens: Optional[int] = None) -> Optional[LLMResponse]:
         """命中缓存返回 LLMResponse，未命中返回 None（线程安全）"""
         with self._lock:
-            key = self._make_key(operation, prompt, system, model)
+            key = self._make_key(operation, prompt, system, model, max_tokens)
             entry = self._cache.get(key)
             if entry is None:
                 return None
@@ -63,22 +65,24 @@ class LLMCache:
                 tokens_used=entry["tokens_used"],
                 cost=entry["cost"],
                 model=entry["model"],
+                stop_reason=entry.get("stop_reason"),
             )
 
-    def set(self, operation: str, prompt: str, system: str, model: str, response: LLMResponse) -> None:
+    def set(self, operation: str, prompt: str, system: str, model: str, response: LLMResponse, max_tokens: Optional[int] = None) -> None:
         """写入缓存（线程安全）
 
         写盘失败（磁盘满、回复里有无法编码的字符……）时恢复调用前的内存状态再抛出：
         否则这条没存成功的回复会留在内存里被后续 get() 重放，之后每一次 set() 也都会因它写盘失败。
         """
         with self._lock:
-            key = self._make_key(operation, prompt, system, model)
+            key = self._make_key(operation, prompt, system, model, max_tokens)
             previous = self._cache.get(key)
             self._cache[key] = {
                 "content": response.content,
                 "tokens_used": response.tokens_used,
                 "cost": response.cost,
                 "model": response.model,
+                "stop_reason": response.stop_reason,
                 "operation": operation,
             }
             try:
@@ -90,14 +94,14 @@ class LLMCache:
                     self._cache[key] = previous
                 raise
 
-    def invalidate(self, operation: str, prompt: str, system: str, model: str) -> bool:
+    def invalidate(self, operation: str, prompt: str, system: str, model: str, max_tokens: Optional[int] = None) -> bool:
         """删除这一次调用对应的缓存条目（线程安全）。
 
         用于调用方校验后拒绝了响应的场景：不删的话，重试会永远命中同一个被拒绝的响应。
         只删与 (operation, prompt, system, model) 完全匹配的条目；返回是否确实删除了条目。
         """
         with self._lock:
-            key = self._make_key(operation, prompt, system, model)
+            key = self._make_key(operation, prompt, system, model, max_tokens)
             if key not in self._cache:
                 return False
             del self._cache[key]

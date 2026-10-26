@@ -12,7 +12,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
-from murder_wizard.llm.client import create_llm_adapter, LLMResponse
+from murder_wizard.llm.client import create_llm_adapter, LLMResponse, LONG_OUTPUT_MAX_TOKENS
 from murder_wizard.llm.cache import LLMCache
 from murder_wizard.prompts.loader import (
     EXAMPLE_PLACEHOLDER_MARK,
@@ -80,19 +80,25 @@ class PhaseRunner:
             self.console.print(f"[red]LLM 初始化失败：{e}[/red]")
             raise
 
-    def _call_llm(self, prompt: str, system: str = "", operation: str = "llm_call") -> LLMResponse:
-        """调用 LLM，带缓存、重试和成本记录"""
-        # 缓存查找
-        cached = self._cache.get(operation, prompt, system, self.llm.model)
+    def _call_llm(self, prompt: str, system: str = "", operation: str = "llm_call",
+                  max_tokens: Optional[int] = None) -> LLMResponse:
+        """调用 LLM，带缓存、重试和成本记录。
+
+        max_tokens：单次输出上限（None 用适配器默认值）。被输出上限截断的响应不写缓存——
+        否则重试会永远重放同一个不完整的结果；调用方应检查 response.truncated。
+        """
+        model = self.llm.model
+        cached = self._cache.get(operation, prompt, system, model, max_tokens=max_tokens)
         if cached is not None:
             self.console.print(f"[dim]缓存命中：{operation}（节省 ¥{cached.cost:.4f}）[/dim]")
             self.session.log_cost(operation + "_cache_hit", 0, 0)
             return cached
 
         try:
-            response = self.llm.complete(prompt, system=system)
-            # 写入缓存
-            self._cache.set(operation, prompt, system, self.llm.model, response)
+            kwargs = {} if max_tokens is None else {"max_tokens": max_tokens}
+            response = self.llm.complete(prompt, system=system, **kwargs)
+            if not getattr(response, "truncated", False):
+                self._cache.set(operation, prompt, system, model, response, max_tokens=max_tokens)
             self.session.log_cost(operation, response.tokens_used, response.cost)
             return response
         except Exception as e:
@@ -254,6 +260,7 @@ class PhaseRunner:
                     matrix_prompt,
                     system=matrix_system,
                     operation=matrix_operation,
+                    max_tokens=LONG_OUTPUT_MAX_TOKENS,
                 )
             total_cost += matrix_response.cost
 
@@ -261,6 +268,10 @@ class PhaseRunner:
             # 失败时 information_matrix.md、state/character_matrix.json、session 都保持原样。
             # 不再用 Markdown 迁移兜底（它会把缺失/非法单元格补成「否」）。
             try:
+                if getattr(matrix_response, "truncated", False):
+                    raise MatrixContractError(
+                        [f"模型输出被单次输出上限（{LONG_OUTPUT_MAX_TOKENS} tokens）截断，信息矩阵不完整"]
+                    )
                 json_data = self._extract_json_from_response(matrix_response.content)
                 if json_data is None:
                     raise MatrixContractError(
@@ -439,7 +450,7 @@ class PhaseRunner:
     def _evict_cached_response(self, operation: str, prompt: str, system: str) -> None:
         """逐出这次调用的缓存条目：_call_llm 先缓存后校验，被拒绝的响应不逐出，重试就会一直重放它。"""
         try:
-            self._cache.invalidate(operation, prompt, system, self.llm.model)
+            self._cache.invalidate(operation, prompt, system, self.llm.model, max_tokens=LONG_OUTPUT_MAX_TOKENS)
             self.console.print("[yellow]已清除该次响应的缓存；重新运行阶段2会重新调用模型。[/yellow]")
         except Exception as e:
             self.console.print(f"[yellow]清除缓存失败：{escape(str(e))}（重试可能重放同一个无效响应，可用 cache 命令清空缓存）[/yellow]")
@@ -449,7 +460,13 @@ class PhaseRunner:
 
         下一步的严格渲染会因上游回复为空而拒绝调用；回复若已留在缓存里，重试永远重放这个空回复。
         """
-        response = self._call_llm(prompt, system=system, operation=operation)
+        response = self._call_llm(prompt, system=system, operation=operation, max_tokens=LONG_OUTPUT_MAX_TOKENS)
+        if getattr(response, "truncated", False):
+            self.console.print(
+                f"[red]{step} 失败：模型输出被单次输出上限（{LONG_OUTPUT_MAX_TOKENS} tokens）截断，已丢弃；"
+                "该步骤未写入文件，阶段2未完成。可换输出上限更大的模型，或缩短这一步的篇幅要求。[/red]"
+            )
+            return None
         # content 可能是 None（OpenAI/MiniMax 的 content_filter、拒答、长度截断）：与空白同样处理，
         # 否则 None.strip() 抛 AttributeError，跳过逐出，缓存里的 None 回复会被每次重试重放。
         # 只含零宽字符/BOM 的回复（str.strip 去不掉）同样视为空

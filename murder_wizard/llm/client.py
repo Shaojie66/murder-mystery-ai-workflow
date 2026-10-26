@@ -8,6 +8,9 @@ from dataclasses import dataclass
 
 # Module-level constants to avoid magic numbers
 DEFAULT_MAX_TOKENS = 4096
+# 长文步骤（DM 手册、结局、a/b 本、整张矩阵）用的单次输出上限；对常见模型都在其输出上限之内
+LONG_OUTPUT_MAX_TOKENS = 8192
+_TRUNCATED_REASONS = frozenset({"max_tokens", "length", "model_context_window_exceeded"})
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_BASE_DELAY = 2  # seconds
 
@@ -26,6 +29,22 @@ class LLMResponse:
     tokens_used: int
     cost: float
     model: str
+    stop_reason: Optional[str] = None  # anthropic: stop_reason；openai 兼容：finish_reason；未知为 None
+
+    @property
+    def truncated(self) -> bool:
+        """模型因输出上限停止：内容是不完整的，不能当成完整结果使用。"""
+        return self.stop_reason in _TRUNCATED_REASONS
+
+
+def _stop_reason(response) -> Optional[str]:
+    r = getattr(response, "stop_reason", None)
+    if not isinstance(r, str):
+        try:
+            r = response.choices[0].finish_reason
+        except Exception:  # noqa: BLE001
+            r = None
+    return r if isinstance(r, str) else None
 
 
 class LLMAdapter(ABC):
@@ -34,7 +53,7 @@ class LLMAdapter(ABC):
     model: str  # 子类必须定义
 
     @abstractmethod
-    def complete(self, prompt: str, system: str = "") -> LLMResponse:
+    def complete(self, prompt: str, system: str = "", max_tokens: Optional[int] = None) -> LLMResponse:
         """同步完成调用"""
         pass
 
@@ -61,14 +80,14 @@ class ClaudeAdapter(LLMAdapter):
         self.client = Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
         self.model = model or os.environ.get("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 
-    def complete(self, prompt: str, system: str = "") -> LLMResponse:
+    def complete(self, prompt: str, system: str = "", max_tokens: Optional[int] = None) -> LLMResponse:
         import anthropic
 
         for attempt in range(DEFAULT_MAX_RETRIES):
             try:
                 response = self.client.messages.create(
                     model=self.model,
-                    max_tokens=DEFAULT_MAX_TOKENS,
+                    max_tokens=max_tokens or DEFAULT_MAX_TOKENS,
                     system=system,
                     messages=[{"role": "user", "content": prompt}]
                 )
@@ -84,6 +103,7 @@ class ClaudeAdapter(LLMAdapter):
 
                 return LLMResponse(
                     content=content,
+                    stop_reason=_stop_reason(response),
                     tokens_used=total_tokens,
                     cost=cost,
                     model=self.model
@@ -132,14 +152,14 @@ class MiniMaxAdapter(LLMAdapter):
         )
         self.model = model or os.environ.get("MINIMAX_MODEL", "MiniMax-M2.7")
 
-    def complete(self, prompt: str, system: str = "") -> LLMResponse:
+    def complete(self, prompt: str, system: str = "", max_tokens: Optional[int] = None) -> LLMResponse:
         import anthropic
 
         for attempt in range(DEFAULT_MAX_RETRIES):
             try:
                 response = self.client.messages.create(
                     model=self.model,
-                    max_tokens=DEFAULT_MAX_TOKENS,
+                    max_tokens=max_tokens or DEFAULT_MAX_TOKENS,
                     system=system,
                     messages=[{"role": "user", "content": prompt}]
                 )
@@ -161,6 +181,7 @@ class MiniMaxAdapter(LLMAdapter):
 
                 return LLMResponse(
                     content=content,
+                    stop_reason=_stop_reason(response),
                     tokens_used=total_tokens,
                     cost=cost,
                     model=self.model
@@ -206,7 +227,7 @@ class OpenAIAdapter(LLMAdapter):
         self.client = OpenAI(api_key=api_key or os.environ.get("OPENAI_API_KEY"))
         self.model = model or os.environ.get("OPENAI_MODEL", "gpt-4o")
 
-    def complete(self, prompt: str, system: str = "") -> LLMResponse:
+    def complete(self, prompt: str, system: str = "", max_tokens: Optional[int] = None) -> LLMResponse:
         from openai import RateLimitError
 
         for attempt in range(DEFAULT_MAX_RETRIES):
@@ -219,7 +240,7 @@ class OpenAIAdapter(LLMAdapter):
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    max_tokens=DEFAULT_MAX_TOKENS,
+                    max_tokens=max_tokens or DEFAULT_MAX_TOKENS,
                 )
                 content = response.choices[0].message.content
                 tokens = response.usage.total_tokens
@@ -227,6 +248,7 @@ class OpenAIAdapter(LLMAdapter):
 
                 return LLMResponse(
                     content=content,
+                    stop_reason=_stop_reason(response),
                     tokens_used=tokens,
                     cost=cost,
                     model=self.model
@@ -312,7 +334,7 @@ class OllamaAdapter(LLMAdapter):
             default_headers=self.extra_headers,
         )
 
-    def complete(self, prompt: str, system: str = "") -> LLMResponse:
+    def complete(self, prompt: str, system: str = "", max_tokens: Optional[int] = None) -> LLMResponse:
         """调用 Ollama（OpenAI 兼容端点）"""
         from openai import APIError, RateLimitError
 
@@ -326,7 +348,7 @@ class OllamaAdapter(LLMAdapter):
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    max_tokens=DEFAULT_MAX_TOKENS,
+                    max_tokens=max_tokens or DEFAULT_MAX_TOKENS,
                 )
                 content = response.choices[0].message.content
                 # Ollama 不返回 usage.token_count 时估计
@@ -336,6 +358,7 @@ class OllamaAdapter(LLMAdapter):
 
                 return LLMResponse(
                     content=content,
+                    stop_reason=_stop_reason(response),
                     tokens_used=tokens,
                     cost=cost,
                     model=self.model
@@ -589,6 +612,7 @@ class UnifiedLLMAdapter:
 
                 return LLMResponse(
                     content=content,
+                    stop_reason=_stop_reason(response),
                     tokens_used=total_tokens,
                     cost=cost,
                     model=self.model,
@@ -623,6 +647,7 @@ class UnifiedLLMAdapter:
 
                 return LLMResponse(
                     content=content,
+                    stop_reason=_stop_reason(response),
                     tokens_used=tokens,
                     cost=cost,
                     model=self.model,

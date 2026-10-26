@@ -38,9 +38,11 @@ def delta_for(proto):
 
 
 class ScriptedLLM:
-    def __init__(self, runner, root, *, fail=None, on_call=None, delta=None, overrides=None):
+    def __init__(self, runner, root, *, fail=None, on_call=None, delta=None, overrides=None, truncate=()):
         self.runner, self.root = runner, root
         self.fail, self.on_call, self.overrides = fail or {}, on_call, overrides or {}
+        self.truncate = set(truncate)
+        self.max_tokens_seen = []
         self.ops = []
         proto = proto_matrix(root)
         self.delta = delta if delta is not None else delta_for(proto)
@@ -99,8 +101,9 @@ class ScriptedLLM:
             return "\n".join(f"第{n}部分：{body}" for n in "一二三四五") + f"\n第六部分：应急预案 {pad}"
         return "结局A：真相大白型。\n结局B：反转型。\n结局C：开放式 " + pad * 2
 
-    def _complete(self, prompt, system="", **_):
+    def _complete(self, prompt, system="", **kw):
         op = self.op_of(prompt)
+        self.max_tokens_seen.append(kw.get("max_tokens"))
         self.ops.append(op)
         if self.on_call:
             self.on_call(len(self.ops), op)
@@ -108,4 +111,5 @@ class ScriptedLLM:
         if mode == "raise":
             raise RuntimeError(f"{op} 调用失败")
         text = "垃圾输出" if mode == "invalid" else self.overrides.get(op, self.good(op))
-        return LLMResponse(content=text, tokens_used=10, cost=0.01, model="mock-model")
+        return LLMResponse(content=text, tokens_used=10, cost=0.01, model="mock-model",
+                           stop_reason="max_tokens" if op in self.truncate else "end_turn")

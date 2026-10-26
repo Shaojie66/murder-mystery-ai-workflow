@@ -124,13 +124,13 @@ class PhaseRunnerWeb:
         """Patch a PhaseRunner instance to emit cost events via SSE."""
         original = runner._call_llm
 
-        def patched(prompt: str, system: str = "", operation: str = "llm_call"):
+        def patched(prompt: str, system: str = "", operation: str = "llm_call", max_tokens=None):
             # 缓存命中不产生花费（CLI 与 cost.log 都记 0）：先无副作用地探测，再调用
             try:
-                hit = runner._cache.get(operation, prompt, system, runner.llm.model) is not None
+                hit = runner._cache.get(operation, prompt, system, runner.llm.model, max_tokens=max_tokens) is not None
             except Exception:  # noqa: BLE001
                 hit = False
-            result = original(prompt, system, operation)
+            result = original(prompt, system, operation, max_tokens=max_tokens)
             if result:
                 cost, tokens = (0.0, 0) if hit else (result.cost, result.tokens_used)
                 self._total_cost += cost

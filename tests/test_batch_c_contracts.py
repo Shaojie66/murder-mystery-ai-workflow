@@ -246,7 +246,7 @@ def test_web_cost_events_do_not_count_cache_hits():
     r = PhaseRunnerWeb("demo", q)
     runner = MagicMock()
     resp = LLMResponse(content="x", tokens_used=10, cost=0.5, model="m")
-    runner._call_llm = lambda p, s="", o="op": resp
+    runner._call_llm = lambda p, s="", o="op", max_tokens=None: resp
     runner.llm.model = "m"
     runner._cache.get.side_effect = [None, resp]  # 第一次未命中，第二次命中
     r._patch_runner(runner)

@@ -237,7 +237,7 @@ flowchart LR
 
 ## Current limits
 
-- **The output cap can truncate long material.** The adapter's per-call limit is 4096 tokens, so the DM manual and endings may be cut off with real models. Detection only checks the last required heading plus a minimum of text after it, so a cut in the middle of the last section is missed. The real fix belongs in the model adapter and is not done.
+- **An output cap still exists, but truncation now fails loudly.** The long steps in Stage 2 and `expand` (matrix, a/b scripts, DM manual, endings) use a per-call limit of 8192 tokens and read the stop reason the model returns; truncated output is discarded, never cached, and that step fails explicitly instead of being written as if complete. If one step keeps being truncated, use a model with a larger output limit. Other calls (such as the audit) keep the default 4096 tokens; real models differ in their output limits and 8192 has not been verified against a live model.
 - **Older projects are not converted automatically.** Without a valid `state/character_matrix.json`, an audit is "incomplete" and `expand` refuses.
 - **Expand is stricter than before.** It is fixed at 6 characters × 7 events; 5–7 events and inserting events into the middle of the original timeline are no longer supported. Web expand needs explicit confirmation.
 - **An audit is not ground truth.** An empty issue list only means the model reported nothing; each run is slow and not free, and small local models may stay "incomplete".
