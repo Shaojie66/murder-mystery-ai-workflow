@@ -21,6 +21,10 @@ murder-wizard splits the work into stages that each produce files, and keeps "wh
 
 > Chinese is the primary language of this project: prompts, templates and generated material are in Chinese. This README is an English rewrite for developers, not a line-by-line translation.
 
+<p align="center">
+  <img src="./docs/images/workflow.svg" alt="The 8 stages from idea to playtest kit, plus expand and audit" width="860">
+</p>
+
 ## How this differs from "a general chat model plus documents"
 
 - **The matrix is the source of truth.** Each character's state for each event (know, suspect, doubt, unaware, misbelieve, conceal) is stored as structured JSON. A model reply with a missing character, a missing event, a dangling evidence reference, or an all-"unaware" matrix is **rejected outright**, never padded and reported as success.
@@ -28,6 +32,10 @@ murder-wizard splits the work into stages that each produce files, and keeps "wh
 - **Expand never touches your original text.** `expand` generates and validates the full 6-character × 7-event candidate in memory, then backs up and overwrites only after you confirm. The original two characters' scripts are kept byte for byte, and only their views of the new events are appended.
 - **Audits are read-only; edits are your call.** The audit reads the a-scripts, b-scripts, DM manual, endings, matrix and mechanism, and reports structured issues with locations. Suggested fixes are written only from an interactive terminal after you pick them, with a backup first.
 - **Local first.** Work, state, cache and the cost log live in `~/.murder-wizard/projects/<name>/`. The CLI and the web app share one engine.
+
+<p align="center">
+  <img src="./docs/images/matrix.svg" alt="Information matrix: character × event knowledge states (illustrative example data)" width="720">
+</p>
 
 The project is Alpha, for local single-user use. Generated material needs human review and real playtests. **A "passed" audit only means the model reported no P0; it does not mean there are no continuity errors.**
 
@@ -111,6 +119,10 @@ murder-wizard audit myproject
 - Before overwriting, it backs up 8 files (including `session.json`) as `<file>.proto.<timestamp>`, and restores from them if a write fails. The tool never deletes backups.
 - Success only means "passed structural checks", not "audited". Run `audit` right after, and read for yourself how the new characters connect to your original script.
 - Precondition: all Stage 2 files exist and `state/character_matrix.json` is a valid 2-character × 3-event matrix. Older projects without a valid matrix are refused, not converted automatically.
+
+<p align="center">
+  <img src="./docs/images/expand-safety.svg" alt="Expand safe-commit flow: in-memory candidate, validation, confirmation, backup, write, rollback" width="860">
+</p>
 
 What `audit` does:
 
