@@ -17,7 +17,7 @@ def main():
 
 @main.command()
 @click.argument("project_name")
-@click.option("--type", "story_type", type=click.Choice(["emotion", "mechanic", "puzzle"]), default=None, help="剧本类型")
+@click.option("--type", "story_type", type=click.Choice(["emotion", "reasoning", "fun", "horror", "mechanic"]), default=None, help="剧本类型")
 @click.option("--prototype/--full", "is_prototype", default=True, help="原型模式（默认开启，2人小本快速验证）")
 def init(project_name: str, story_type: str, is_prototype: bool):
     """初始化新剧本杀项目
@@ -25,13 +25,15 @@ def init(project_name: str, story_type: str, is_prototype: bool):
     原型模式（默认）：先生成2人版本，快速验证后 expand 扩写为完整6人版本
     """
     from murder_wizard.cli.wizard_tui import run_init_wizard
+    ctx = click.get_current_context()
+    explicit = lambda name: ctx.get_parameter_source(name) is not click.core.ParameterSource.DEFAULT
     session = SessionManager(project_name)
     state = MurderWizardState(
         story_type=story_type or "mechanic",
         project_name=project_name,
         is_prototype=is_prototype
     )
-    run_init_wizard(session, state, console)
+    run_init_wizard(session, state, console, ask_mode=not explicit("is_prototype"), ask_type=story_type is None)
 
 
 @main.command()
@@ -54,18 +56,30 @@ def phase(project_name: str, stage: int, analyze: bool):
       murder-wizard phase myproject 4       # 生成测试指南
       murder-wizard phase myproject 4 --analyze  # 分析反馈
     """
+    import sys
     from murder_wizard.cli.commands import run_phase
     session = SessionManager(project_name)
-    run_phase(session, stage, console, analyze=analyze)
+    if not run_phase(session, stage, console, analyze=analyze):
+        sys.exit(1)
 
 
 @main.command()
 @click.argument("project_name")
-def expand(project_name: str):
-    """将原型扩写为完整版本"""
+@click.option("--yes", "-y", is_flag=True, help="确认覆盖并重新生成多份作品文件（非交互运行必须加）")
+def expand(project_name: str, yes: bool):
+    """将原型扩写为完整版本（6 人 × 7 事件）
+
+    先在内存里生成并校验完整候选，确认后才备份并覆盖；任何失败都不改动作品。
+    追加到 characters.md/background.md/scripts_b.md 原文之后，整份重新生成
+    information_matrix.md、dm_manual.md、endings.md、state/character_matrix.json。
+    失败或放弃时退出码为 1。
+    """
+    import sys
     from murder_wizard.cli.commands import run_expand
     session = SessionManager(project_name)
-    run_expand(session, console)
+    ok = run_expand(session, console, accept_overwrite=yes)
+    if not ok:
+        sys.exit(1)
 
 
 @main.command()
@@ -106,24 +120,25 @@ def cache(project_name: str, clear: bool):
 
 @main.command()
 @click.argument("project_name")
-@click.option("--force", is_flag=True, help="强制推进流程，忽略未解决的 P0 穿帮问题")
+@click.option("--force", is_flag=True, help="已弃用：不再改变审计结论")
 def audit(project_name: str, force: bool):
-    """完整穿帮审计：深度分析角色剧本、信息矩阵、机制设计
+    """完整穿帮审计：读取 a/b 本、DM 手册、结局、信息矩阵和机制设计
 
-    基于信息矩阵逐格核对，检查：
-    - 角色是否提及当时不知道的信息（P1致命穿帮）
-    - 机制漏洞和平衡性问题
-    - 结局逻辑和唯一性
+    三轮审计（矩阵逐格 / 机制一致性 / 结局合理性），输出结构化问题与定位：
+    - 默认只读，不改写作品；解析失败或材料缺失 = 未完成，不是通过
+    - “通过”仅表示模型未报告 P0，不等于没有穿帮
+    - 退出码：通过/已豁免 0，未通过 1，未完成 2
 
     生成 audit_report.md，建议在上线前独立运行。
 
     示例：
       murder-wizard audit myproject
-      murder-wizard audit myproject --force  # 强制推进，忽略已知 P0
     """
+    import sys
     from murder_wizard.cli.commands import run_audit
     session = SessionManager(project_name)
-    run_audit(session, console, force=force)
+    outcome = run_audit(session, console, force=force)
+    sys.exit(2 if outcome is None else outcome.exit_code)
 
 
 if __name__ == "__main__":

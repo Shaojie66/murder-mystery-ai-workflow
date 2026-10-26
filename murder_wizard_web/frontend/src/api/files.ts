@@ -65,9 +65,3 @@ export async function getCosts(projectName: string): Promise<CostSummary> {
   const name = encodeURIComponent(projectName)
   return request(`/projects/${name}/costs`)
 }
-
-// Phase running status
-export async function getPhaseStatus(projectName: string, stage: number) {
-  const name = encodeURIComponent(projectName)
-  return request<{ running: boolean }>(`/projects/${name}/phases/${stage}/status`)
-}

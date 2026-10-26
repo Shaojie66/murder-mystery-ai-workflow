@@ -1,27 +1,20 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
-import { getProject } from '../api/projects'
+import { useNavigate, Link } from 'react-router-dom'
 import { request } from '../api/client'
-import type { ProjectDetails } from '../types/api'
+import { useProjectWorkbenchContext } from '../components/layout/ProjectWorkbenchLayout'
 
 export default function AuditView() {
-  const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
-  const projectName = decodeURIComponent(name || '')
+  const { projectName, project } = useProjectWorkbenchContext()
   const [report, setReport] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [project, setProject] = useState<ProjectDetails | null>(null)
 
   useEffect(() => {
     if (!projectName) return
-    Promise.all([
-      request<{ content: string }>(`/projects/${encodeURIComponent(projectName)}/audit/report`),
-      getProject(projectName),
-    ])
-      .then(([reportData, projectData]) => {
+    request<{ content: string }>(`/projects/${encodeURIComponent(projectName)}/audit/report`)
+      .then((reportData) => {
         setReport(reportData.content)
-        setProject(projectData)
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : '加载失败')

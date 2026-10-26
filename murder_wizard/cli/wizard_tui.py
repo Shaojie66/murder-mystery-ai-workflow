@@ -107,8 +107,12 @@ def _compile_brief(
 """
 
 
-def run_init_wizard(session: SessionManager, state: MurderWizardState, console: Console):
-    """运行初始化向导 — YC Office Hours 风格创意问卷"""
+def run_init_wizard(session: SessionManager, state: MurderWizardState, console: Console,
+                    ask_mode: bool = True, ask_type: bool = True):
+    """运行初始化向导 — YC Office Hours 风格创意问卷
+
+    ask_mode / ask_type 为 False 表示该项已由命令行参数明确指定，向导不再询问、不覆盖。
+    """
     signal.signal(signal.SIGINT, handle_interrupt)
 
     console.print(Panel.fit(
@@ -118,33 +122,37 @@ def run_init_wizard(session: SessionManager, state: MurderWizardState, console: 
     ))
 
     # ─── 创作模式 ───────────────────────────────────────────────────
-    console.print("\n[bold]第一步：选择创作模式[/bold]")
-    console.print("1. [green]原型模式（推荐）[/green] - 先做一个2人小本，快速验证")
-    console.print("2. [cyan]完整模式[/cyan] - 6人完整剧本，周期更长")
+    if ask_mode:
+        console.print("\n[bold]第一步：选择创作模式[/bold]")
+        console.print("1. [green]原型模式（推荐）[/green] - 先做一个2人小本，快速验证")
+        console.print("2. [cyan]完整模式[/cyan] - 6人完整剧本，周期更长")
 
-    mode_choice = Prompt.ask(
-        "\n请选择创作模式",
-        choices=["1", "2"],
-        default="1"
-    )
-    state.is_prototype = (mode_choice == "1")
+        mode_choice = Prompt.ask(
+            "\n请选择创作模式",
+            choices=["1", "2"],
+            default="1"
+        )
+        state.is_prototype = (mode_choice == "1")
     mode_label = "原型模式" if state.is_prototype else "完整模式"
 
     # ─── 剧本类型 ───────────────────────────────────────────────────
-    console.print("\n[bold]第二步：选择剧本类型[/bold]")
-    console.print("1. [red]情感本[/red] - 注重角色情感和故事体验")
-    console.print("2. [yellow]机制本[/yellow] - 注重游戏机制和阵营对抗")
-    console.print("3. [blue]推理本[/blue] - 注重解谜和线索推理")
+    type_label_map = {"emotion": "情感本", "reasoning": "推理本", "fun": "欢乐本", "horror": "恐怖本", "mechanic": "机制本"}
+    if ask_type:
+        console.print("\n[bold]第二步：选择剧本类型[/bold]")
+        console.print("1. [red]情感本[/red] - 注重角色情感和故事体验")
+        console.print("2. [blue]推理本[/blue] - 注重解谜和线索推理")
+        console.print("3. [magenta]欢乐本[/magenta] - 注重社交碰撞和喜剧人设")
+        console.print("4. [dim]恐怖本[/dim] - 注重氛围营造和心理压迫")
+        console.print("5. [yellow]机制本[/yellow] - 注重游戏机制和阵营对抗")
 
-    type_choice = Prompt.ask(
-        "\n请选择剧本类型",
-        choices=["1", "2", "3"],
-        default="2"
-    )
-    type_map = {"1": "emotion", "2": "mechanic", "3": "puzzle"}
-    type_label_map = {"1": "情感本", "2": "机制本", "3": "推理本"}
-    state.story_type = type_map[type_choice]
-    story_type_label = type_label_map[type_choice]
+        type_choice = Prompt.ask(
+            "\n请选择剧本类型",
+            choices=["1", "2", "3", "4", "5"],
+            default="5"
+        )
+        type_map = {"1": "emotion", "2": "reasoning", "3": "fun", "4": "horror", "5": "mechanic"}
+        state.story_type = type_map[type_choice]
+    story_type_label = type_label_map.get(state.story_type, state.story_type)
 
     console.print(f"\n[bold]当前类型：{story_type_label}，{mode_label}[/bold]")
 

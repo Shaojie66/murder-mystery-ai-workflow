@@ -1,9 +1,15 @@
 """Cost tracking API endpoints."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pathlib import Path
 import json
 
-router = APIRouter(prefix="/api/projects/{project_name}/costs", tags=["costs"])
+from core.auth_deps import require_auth
+
+router = APIRouter(
+    prefix="/api/projects/{project_name}/costs",
+    tags=["costs"],
+    dependencies=[Depends(require_auth)],
+)
 
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 

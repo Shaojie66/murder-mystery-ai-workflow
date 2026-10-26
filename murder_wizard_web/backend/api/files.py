@@ -1,10 +1,15 @@
 """File read/write API endpoints."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from pathlib import Path
-import os
 
-router = APIRouter(prefix="/api/projects/{project_name}/files", tags=["files"])
+from core.auth_deps import require_auth
+
+router = APIRouter(
+    prefix="/api/projects/{project_name}/files",
+    tags=["files"],
+    dependencies=[Depends(require_auth)],
+)
 
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 

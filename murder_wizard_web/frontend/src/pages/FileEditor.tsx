@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { getFile, saveFile, listFiles } from '../api/files'
+import { useProjectWorkbenchContext } from '../components/layout/ProjectWorkbenchLayout'
 
 // Lazy load Monaco — only loaded when user opens the file editor
 const Editor = lazy(() => import('@monaco-editor/react'))
@@ -9,10 +10,10 @@ const Editor = lazy(() => import('@monaco-editor/react'))
 type ViewMode = 'edit' | 'preview'
 
 export default function FileEditor() {
-  const { name, filename } = useParams<{ name: string; filename: string }>()
+  const params = useParams()
   const navigate = useNavigate()
-  const projectName = decodeURIComponent(name || '')
-  const fileName = decodeURIComponent(filename || '')
+  const { projectName, workbench, refreshWorkbench } = useProjectWorkbenchContext()
+  const fileName = decodeURIComponent(params['*'] || '')
   const [content, setContent] = useState('')
   const [originalContent, setOriginalContent] = useState('')
   const [loading, setLoading] = useState(true)
@@ -48,6 +49,7 @@ export default function FileEditor() {
       await saveFile(projectName, fileName, content)
       setOriginalContent(content)
       setSaved(true)
+      void refreshWorkbench()
       setTimeout(() => setSaved(false), 2000)
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : '保存失败')
@@ -136,6 +138,16 @@ export default function FileEditor() {
             }}
           >
             {fileName}
+          </span>
+          <span
+            style={{
+              fontFamily: "'Crimson Pro', serif",
+              fontSize: '12px',
+              color: 'var(--text-faint)',
+              flexShrink: 0,
+            }}
+          >
+            {workbench.workflow.current_stage_label}
           </span>
           {hasChanges && (
             <span

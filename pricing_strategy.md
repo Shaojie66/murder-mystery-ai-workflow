@@ -1,8 +1,12 @@
 # Pricing Strategy: murder-wizard Pro
 
+> **历史方案说明（2026-10-24 更新）**：本文保留早期探索内容。当前产品按本地单用户 Alpha 推进，有效范围与验收见[本地可靠性 MVP 方案](./docs/reliability-mvp-plan.md)。除另附日期、样本与原始结果外，需求、市场、价格、增长及准确率均为待验证假设。
+>
+> 价格、分档、权益和收入预测仅用于探索，不代表可购买套餐；本轮先验证自带 key 的完整任务成本。
+
 **Date**: 2026-04-01
 **Product**: murder-wizard Pro (SaaS subscription)
-**Stage**: Pre-launch, validated through user research and competitor analysis
+**Stage**: Historical pricing hypotheses; not validated by completed user research
 
 ---
 

@@ -4,19 +4,38 @@ import hashlib
 import base64
 import json
 import os
+import secrets
 import time
+import warnings
 
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
-if not SECRET_KEY:
-    import warnings
+_SECRET_KEY: str | None = None
+TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365  # 1 year
+
+
+def _get_secret_key() -> str:
+    """Resolve the JWT secret once per process.
+
+    Production should provide ``JWT_SECRET_KEY`` explicitly.
+    Development falls back to a per-process random secret so we never ship
+    a forgeable hardcoded token key.
+    """
+    global _SECRET_KEY
+    if _SECRET_KEY is not None:
+        return _SECRET_KEY
+
+    configured = os.environ.get("JWT_SECRET_KEY")
+    if configured:
+        _SECRET_KEY = configured
+        return _SECRET_KEY
+
+    _SECRET_KEY = secrets.token_urlsafe(32)
     warnings.warn(
-        "JWT_SECRET_KEY not set — using insecure default for development only. "
+        "JWT_SECRET_KEY not set — generated an ephemeral development secret for this process. "
         "Set JWT_SECRET_KEY env var in production.",
         UserWarning,
         stacklevel=2,
     )
-    SECRET_KEY = "insecure-dev-secret-do-not-use-in-production"
-TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365  # 1 year
+    return _SECRET_KEY
 
 
 def _base64_encode(data: bytes) -> str:
@@ -42,7 +61,7 @@ def encode_token(user_id: str, expires_at: int | None = None) -> str:
     payload_b64 = _base64_encode(json.dumps(payload, separators=(",", ":")).encode())
 
     signature = hmac.new(
-        SECRET_KEY.encode(),
+        _get_secret_key().encode(),
         f"{header_b64}.{payload_b64}".encode(),
         hashlib.sha256,
     ).digest()
@@ -61,7 +80,7 @@ def decode_token(token: str) -> str | None:
         header_b64, payload_b64, sig_b64 = parts
 
         expected_sig = hmac.new(
-            SECRET_KEY.encode(),
+            _get_secret_key().encode(),
             f"{header_b64}.{payload_b64}".encode(),
             hashlib.sha256,
         ).digest()

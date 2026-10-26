@@ -11,11 +11,12 @@ import Metrics from './pages/Metrics'
 import Settings from './pages/Settings'
 import Subscription from './pages/Subscription'
 import Layout from './components/layout/Layout'
+import ProjectWorkbenchLayout from './components/layout/ProjectWorkbenchLayout'
 import { LandingA, LandingB, LandingPage } from './landing'
 import { ensureToken } from './api/client'
 
 export default function App() {
-  useEffect(() => { ensureToken() }, [])
+  useEffect(() => { ensureToken().catch(() => {}) }, [])
   return (
     <BrowserRouter>
       <Routes>
@@ -26,12 +27,14 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/subscription" element={<Subscription />} />
-          <Route path="/projects/:name" element={<ProjectView />} />
-          <Route path="/projects/:name/phase/:stage" element={<PhaseExecution />} />
-          <Route path="/projects/:name/files/:filename" element={<FileEditor />} />
-          <Route path="/projects/:name/matrix" element={<MatrixEditor />} />
-          <Route path="/projects/:name/audit" element={<AuditView />} />
-          <Route path="/projects/:name/costs" element={<CostPage />} />
+          <Route path="/projects/:name" element={<ProjectWorkbenchLayout />}>
+            <Route index element={<ProjectView />} />
+            <Route path="phase/:stage" element={<PhaseExecution />} />
+            <Route path="files/*" element={<FileEditor />} />
+            <Route path="matrix" element={<MatrixEditor />} />
+            <Route path="audit" element={<AuditView />} />
+            <Route path="costs" element={<CostPage />} />
+          </Route>
           <Route path="/metrics" element={<Metrics />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

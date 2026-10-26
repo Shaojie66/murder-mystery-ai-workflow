@@ -23,6 +23,46 @@ export interface ProjectDetails extends Project {
   can_audit: boolean
 }
 
+export interface ArtifactGroup {
+  id: string
+  label: string
+  items: ArtifactInfo[]
+}
+
+export interface WorkflowInfo {
+  current_stage: string
+  current_stage_label: string
+  current_stage_number?: number | null
+  next_stage?: number | null
+  next_stage_label?: string | null
+  running: boolean
+  can_expand: boolean
+  can_audit: boolean
+}
+
+export interface ReadinessInfo {
+  brief_ready: boolean
+  outline_ready: boolean
+  outline_source: string
+  blockers: string[]
+}
+
+export interface QuickAction {
+  id: string
+  label: string
+  href: string
+  enabled: boolean
+  kind: string
+}
+
+export interface ProjectWorkbench {
+  project: ProjectDetails
+  workflow: WorkflowInfo
+  readiness: ReadinessInfo
+  artifacts: ArtifactGroup[]
+  quick_actions: QuickAction[]
+}
+
 export interface CreateProjectRequest {
   name: string
   story_type: string

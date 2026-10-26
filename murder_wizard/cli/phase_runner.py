@@ -6,6 +6,7 @@ import signal
 from pathlib import Path
 from typing import Optional
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
@@ -13,8 +14,34 @@ from murder_wizard.wizard.session import SessionManager
 from murder_wizard.wizard.state_machine import MurderWizardState, Stage
 from murder_wizard.llm.client import create_llm_adapter, LLMResponse
 from murder_wizard.llm.cache import LLMCache
-from murder_wizard.prompts.loader import PromptLoader
-from murder_wizard.wizard.truth_files import TruthFileManager
+from murder_wizard.prompts.loader import (
+    EXAMPLE_PLACEHOLDER_MARK,
+    PromptLoader,
+    PromptRenderError,
+    is_blank_text,
+    is_example_placeholder_text,
+)
+from murder_wizard.wizard.schemas import CharacterMatrix
+from murder_wizard.wizard.audit import (
+    EDITABLE_FILES, MAX_ISSUES_PER_ROUND, ROUND_FILES, ROUND_NUMBER, ROUND_TITLE, ROUNDS,
+    ApplyResult, AuditMaterials, AuditOutcome, AuditParseError, AuditStatus, WaiverFile,
+    apply_fixes as apply_audit_patches, apply_waivers, assign_refs, fix_contract, hint_lines,
+    load_waivers, output_contract, parse_fix_output, parse_round_output, render_report,
+    run_static_checks,
+)
+from murder_wizard.wizard.truth_files import (
+    MatrixContractError,
+    TruthFileManager,
+    validate_generated_matrix,
+)
+
+
+# PhaseRunner._extract_json_from_response 的工作量上限（字符）：预算 = BASE + PER_CHAR * 回复长度。
+# 每次失败的尝试至少记 MIN_ATTEMPT_COST（失败再便宜也限制尝试次数），RecursionError 按 RECURSION_COST 记。
+_EXTRACT_BUDGET_BASE = 2_000_000
+_EXTRACT_BUDGET_PER_CHAR = 16
+_EXTRACT_MIN_ATTEMPT_COST = 2048
+_EXTRACT_RECURSION_COST = 8192
 
 
 class PhaseRunner:
@@ -218,40 +245,64 @@ class PhaseRunner:
         try:
             # ── Q1: 信息矩阵 ─────────────────────────────────────────────
             self.console.print("[cyan]Q1：生成信息矩阵...[/cyan]")
+            matrix_prompt = self._build_matrix_prompt(outline, mechanism)
+            matrix_system = "你是一个专业的剧本杀作家，擅长设计复杂、严谨的角色关系和事件逻辑。"
+            matrix_operation = "stage_2_matrix"
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成角色信息矩阵...", total=None)
                 matrix_response = self._call_llm(
-                    self._build_matrix_prompt(outline, mechanism),
-                    system="你是一个专业的剧本杀作家，擅长设计复杂、严谨的角色关系和事件逻辑。",
-                    operation="stage_2_matrix"
+                    matrix_prompt,
+                    system=matrix_system,
+                    operation=matrix_operation,
                 )
             total_cost += matrix_response.cost
 
-            matrix_file = self.session.project_path / "information_matrix.md"
-            matrix_file.write_text(matrix_response.content, encoding="utf-8")
-
-            # 提取并保存 JSON truth file
-            truth_mgr = TruthFileManager(self.session.project_path)
-            json_data = self._extract_json_from_response(matrix_response.content)
-            if json_data:
-                try:
-                    from murder_wizard.wizard.schemas import CharacterMatrix
-                    matrix_model = CharacterMatrix.model_validate(json_data)
-                    truth_mgr.save_matrix(matrix_model, author="llm", note="Stage 2 Q1 matrix generation")
-                    self.console.print(f"[green]JSON 真相文件已保存[/green]")
-                except Exception as e:
-                    self.console.print(f"[yellow]JSON 校验失败，从 Markdown 迁移：{e}[/yellow]")
-                    migrated = truth_mgr.migrate_from_markdown(
-                        matrix_response.content, char_count=char_count,
-                        event_count=event_count, is_prototype=self.state.is_prototype,
+            # 失败关闭：只有完整、合法的矩阵才能成为结果。校验先于任何写入——
+            # 失败时 information_matrix.md、state/character_matrix.json、session 都保持原样。
+            # 不再用 Markdown 迁移兜底（它会把缺失/非法单元格补成「否」）。
+            try:
+                json_data = self._extract_json_from_response(matrix_response.content)
+                if json_data is None:
+                    raise MatrixContractError(
+                        ["响应中没有可解析的 JSON 信息矩阵（未找到含 characters 的合法 JSON 对象，"
+                         "可能被截断、格式错误，或只给了 Markdown 表格）"]
                     )
-                    truth_mgr.save_matrix(migrated, author="llm", note=f"Migrated: {e}")
-            else:
-                migrated = truth_mgr.migrate_from_markdown(
-                    matrix_response.content, char_count=char_count,
-                    event_count=event_count, is_prototype=self.state.is_prototype,
+                echo_problems = self._example_echo_problems(json_data)
+                if echo_problems:
+                    raise MatrixContractError(echo_problems)
+                matrix_model = validate_generated_matrix(
+                    json_data,
+                    char_count=char_count,
+                    event_count=event_count,
+                    is_prototype=bool(self.state.is_prototype),
+                    brief_content=outline,
                 )
-                truth_mgr.save_matrix(migrated, author="llm", note="No JSON in Q1 response")
+                # 发布与下游提示词用的都是校验通过的矩阵，不是模型原始回复：
+                # 原始回复可能夹带未经校验的第二份矩阵或说明文字，与 character_matrix.json 不一致。
+                # 先渲染再写文件：渲染失败时不会留下只写了一半的结果。
+                # 渲染也在这个保护块里：一份校验通过却无法发布的回复同样已被拒绝，必须逐出缓存。
+                matrix_md = self._render_matrix_markdown(matrix_model)
+            except MatrixContractError as e:
+                self._reject_stage_2_matrix(
+                    matrix_prompt, matrix_system, matrix_operation, e.problems
+                )
+                return False
+            except Exception as e:
+                # 提取/校验/渲染本身意外失败（如嵌套过深触发 RecursionError）：这份响应同样已被拒绝，
+                # 必须逐出缓存，否则重试会一直重放它、模型不会再被调用。随后交给外层报告并打印堆栈。
+                self.console.print(
+                    f"[red]Q1 失败：校验或渲染模型返回的信息矩阵时出现意外错误（{type(e).__name__}），"
+                    "已丢弃该响应；未写入任何文件，阶段2未完成。[/red]"
+                )
+                self._evict_cached_response(matrix_operation, matrix_prompt, matrix_system)
+                raise
+
+            truth_mgr = TruthFileManager(self.session.project_path)
+            truth_mgr.save_matrix(matrix_model, author="llm", note="Stage 2 Q1 matrix generation")
+            self.console.print(f"[green]JSON 真相文件已保存[/green]")
+
+            matrix_file = self.session.project_path / "information_matrix.md"
+            matrix_file.write_text(matrix_md, encoding="utf-8")
 
             self.console.print(f"[green]Q1 完成：信息矩阵已保存[/green]")
 
@@ -259,11 +310,14 @@ class PhaseRunner:
             self.console.print("[cyan]Q2：生成角色背景设定...[/cyan]")
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成角色背景...", total=None)
-                bg_response = self._call_llm(
-                    self._build_background_prompt(outline, matrix_response.content),
-                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
-                    operation="stage_2_background"
+                bg_response = self._call_stage_2_step(
+                    "Q2（角色背景）",
+                    self._build_background_prompt(outline, matrix_md),
+                    self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    "stage_2_background",
                 )
+            if bg_response is None:
+                return False
             total_cost += bg_response.cost
 
             bg_file = self.session.project_path / "background.md"
@@ -274,11 +328,14 @@ class PhaseRunner:
             self.console.print("[cyan]Q3：生成 a本（阅读本）...[/cyan]")
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成角色剧本...", total=None)
-                a_response = self._call_llm(
-                    self._build_characters_prompt(bg_response.content, matrix_response.content),
-                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
-                    operation="stage_2_characters"
+                a_response = self._call_stage_2_step(
+                    "Q3（a本）",
+                    self._build_characters_prompt(bg_response.content, matrix_md),
+                    self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    "stage_2_characters",
                 )
+            if a_response is None:
+                return False
             total_cost += a_response.cost
 
             chars_file = self.session.project_path / "characters.md"
@@ -289,11 +346,14 @@ class PhaseRunner:
             self.console.print("[cyan]Q4：生成 b本（线索本）...[/cyan]")
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成线索本...", total=None)
-                b_response = self._call_llm(
-                    self._build_clue_cards_prompt(a_response.content, matrix_response.content),
-                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
-                    operation="stage_2_clue_cards"
+                b_response = self._call_stage_2_step(
+                    "Q4（b本）",
+                    self._build_clue_cards_prompt(a_response.content, matrix_md),
+                    self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    "stage_2_clue_cards",
                 )
+            if b_response is None:
+                return False
             total_cost += b_response.cost
 
             b_file = self.session.project_path / "scripts_b.md"
@@ -305,11 +365,14 @@ class PhaseRunner:
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成 DM 手册...", total=None)
                 full_script = f"{a_response.content}\n\n{b_response.content}"
-                dm_response = self._call_llm(
-                    self._build_dm_manual_prompt(full_script, matrix_response.content, mechanism),
-                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
-                    operation="stage_2_dm_manual"
+                dm_response = self._call_stage_2_step(
+                    "Q5（DM 手册）",
+                    self._build_dm_manual_prompt(full_script, matrix_md, mechanism),
+                    self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    "stage_2_dm_manual",
                 )
+            if dm_response is None:
+                return False
             total_cost += dm_response.cost
 
             dm_file = self.session.project_path / "dm_manual.md"
@@ -320,11 +383,14 @@ class PhaseRunner:
             self.console.print("[cyan]Q6：生成结局扩展...[/cyan]")
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
                 task = progress.add_task("生成结局...", total=None)
-                ending_response = self._call_llm(
-                    self._build_endings_prompt(full_script, matrix_response.content, dm_response.content),
-                    system=self._loader.system_script_writer(self.state.story_type or "mechanic"),
-                    operation="stage_2_endings"
+                ending_response = self._call_stage_2_step(
+                    "Q6（结局扩展）",
+                    self._build_endings_prompt(full_script, matrix_md, dm_response.content),
+                    self._loader.system_script_writer(self.state.story_type or "mechanic"),
+                    "stage_2_endings",
                 )
+            if ending_response is None:
+                return False
             total_cost += ending_response.cost
 
             endings_file = self.session.project_path / "endings.md"
@@ -346,15 +412,54 @@ class PhaseRunner:
             self._show_cost_warning(total_cost)
 
             # 轻量穿帮检查
-            self._run_consistency_check(a_response.content, matrix_response.content)
+            self._run_consistency_check(a_response.content, matrix_md)
 
             return True
+
+        except PromptRenderError as e:
+            # 提示词输入缺失：在调用模型之前失败，不是程序异常，无需堆栈
+            self.console.print(f"[red]阶段2失败：{e}[/red]")
+            return False
 
         except Exception as e:
             self.console.print(f"[red]阶段2失败：{e}[/red]")
             import traceback
             traceback.print_exc()
             return False
+
+    def _reject_stage_2_matrix(
+        self, prompt: str, system: str, operation: str, problems: list[str]
+    ) -> None:
+        """Q1 响应未通过契约：报告问题，并清除这次调用的缓存，避免重试时重放同一个坏响应。"""
+        self.console.print("[red]Q1 失败：模型返回的信息矩阵未通过校验，已丢弃；未写入任何文件，阶段2未完成。[/red]")
+        for problem in problems:
+            self.console.print(f"[red]  - {escape(problem)}[/red]")
+        self._evict_cached_response(operation, prompt, system)
+
+    def _evict_cached_response(self, operation: str, prompt: str, system: str) -> None:
+        """逐出这次调用的缓存条目：_call_llm 先缓存后校验，被拒绝的响应不逐出，重试就会一直重放它。"""
+        try:
+            self._cache.invalidate(operation, prompt, system, self.llm.model)
+            self.console.print("[yellow]已清除该次响应的缓存；重新运行阶段2会重新调用模型。[/yellow]")
+        except Exception as e:
+            self.console.print(f"[yellow]清除缓存失败：{escape(str(e))}（重试可能重放同一个无效响应，可用 cache 命令清空缓存）[/yellow]")
+
+    def _call_stage_2_step(self, step: str, prompt: str, system: str, operation: str) -> Optional[LLMResponse]:
+        """调用阶段2的一步（Q2-Q6）。空白或 None 回复视为失败：逐出缓存并返回 None，不写任何文件。
+
+        下一步的严格渲染会因上游回复为空而拒绝调用；回复若已留在缓存里，重试永远重放这个空回复。
+        """
+        response = self._call_llm(prompt, system=system, operation=operation)
+        # content 可能是 None（OpenAI/MiniMax 的 content_filter、拒答、长度截断）：与空白同样处理，
+        # 否则 None.strip() 抛 AttributeError，跳过逐出，缓存里的 None 回复会被每次重试重放。
+        # 只含零宽字符/BOM 的回复（str.strip 去不掉）同样视为空
+        if not isinstance(response.content, str) or is_blank_text(response.content):
+            self.console.print(
+                f"[red]{step} 失败：模型返回了空内容，已丢弃；该步骤未写入文件，阶段2未完成。[/red]"
+            )
+            self._evict_cached_response(operation, prompt, system)
+            return None
+        return response
 
     def _stage_2_artifact_status(self) -> tuple[list[str], list[str]]:
         """Return existing/missing Stage 2 artifacts to support resume logic."""
@@ -373,10 +478,7 @@ class PhaseRunner:
         return self._loader.information_matrix_json(
             brief_content=outline,
             mechanism_content=mechanism,
-            story_type=self.state.story_type or "机制本",
             is_prototype=self.state.is_prototype,
-            fill_rules=None,  # uses default from loader
-            matrix_table=None,  # uses default blank table
         )
 
     def _run_consistency_check(self, characters: str, matrix: str) -> None:
@@ -391,13 +493,9 @@ class PhaseRunner:
                 operation="consistency_check"
             )
 
-            # 检查是否有发现问题
-            content = response.content.lower().strip()
-            if any(word in content for word in ["无穿帮", "未发现", "没有矛盾", "一致"]):
-                self.console.print("[green]✓ 穿帮检查通过，未发现明显矛盾[/green]")
-            else:
-                self.console.print("[yellow]⚠ 穿帮检查发现以下问题：[/yellow]")
-                self.console.print(Panel(response.content[:1000], border_style="yellow"))
+            # 粗查：不再用子串判定“通过”（“不一致”也含“一致”）。结论以 audit 为准。
+            self.console.print("[yellow]轻量检查完成（粗查，不判定通过；结果见 consistency_report.md，上线前请运行 murder-wizard audit）[/yellow]")
+            self.console.print(Panel(escape(response.content[:1000]), border_style="yellow"))
 
             # 保存检查报告
             report_file = self.session.project_path / "consistency_report.md"
@@ -461,51 +559,100 @@ class PhaseRunner:
         )
 
     def _extract_json_from_response(self, content: str) -> dict | None:
-        """从 LLM 响应中提取 JSON 代码块。
+        """从 LLM 响应中提取信息矩阵 JSON 对象（含顶层 characters 键的对象）。
 
-        支持两种格式：
-        1. ```json ... ``` 代码块（最可靠）
-        2. 行内 JSON — 通过括号计数找到最外层 { }
+        在每个可能的对象起点用 JSONDecoder.raw_decode 解析，```json 围栏里的 JSON 与裸 JSON 同等对待
+        （同一份矩阵只会被找到一次）。不数括号：字符串值里的 { } 与前后说明文字里孤立的花括号都不会干扰解析。
 
-        Returns parsed dict or None if no valid JSON found.
+        恰好一份 → 返回它；没有（含 content 不是文本）→ None；多于一份 → 抛 MatrixContractError。
+        多份时无法判断哪份才是最终答案：只校验其中一份，另一份（草稿、被修订的版本、提示词里的示例、
+        未经校验的矩阵）仍会混在回复里，所以整个回复一并拒绝。
+
+        工作量有上限：每个失败的起点都要白扫一段文本，退化输入（如反复的 ``{"a":``）会让总量随长度二次方增长
+        （实测 100 KB 约 11 秒、200 KB 约 46 秒）。累计扫描量超过 ``_EXTRACT_BUDGET_*`` 就放弃并返回 None，
+        和「找不到 JSON」同样失败关闭；正常回复（说明文字、围栏、被截断的草稿）远在上限之内。
         """
         import re
         import json as _json
 
-        # Strategy 1: ```json ... ``` code fence (most reliable)
-        for match in re.finditer(r"```json\s*(\S[\s\S]*?)\s*```", content):
-            candidate = match.group(1).strip()
+        if not isinstance(content, str):
+            return None  # 模型没有给文本（如 content_filter 返回 null）：等同于没有 JSON
+
+        decoder = _json.JSONDecoder()
+        object_start = re.compile(r'\{\s*["}]')
+        last_marker = content.rfind('"characters"')  # 矩阵对象的起点必然在它之前；没有则无需尝试（也避免退化输入的二次方开销）
+        candidates: list[dict] = []
+        pos = 0
+        work = 0  # 失败的尝试累计白扫了多少字符
+        budget = _EXTRACT_BUDGET_BASE + _EXTRACT_BUDGET_PER_CHAR * len(content)
+        while True:
+            found = object_start.search(content, pos)
+            if found is None or found.start() > last_marker:
+                break
+            start = found.start()
             try:
-                data = _json.loads(candidate)
-                if isinstance(data, dict) and "characters" in data:
-                    return data
-            except Exception:
-                pass
+                data, end = decoder.raw_decode(content, start)
+            except (ValueError, RecursionError) as exc:
+                scanned = (
+                    _EXTRACT_RECURSION_COST if isinstance(exc, RecursionError)
+                    else getattr(exc, "pos", start) - start  # JSONDecodeError.pos：解析走到的位置
+                )
+                work += max(_EXTRACT_MIN_ATTEMPT_COST, scanned)
+                if work > budget:
+                    return None  # 退化输入：放弃，失败关闭
+                pos = start + 1  # 不是合法 JSON 对象（说明文字里的花括号、被截断等）：试下一个起点
+                continue
+            if isinstance(data, dict) and "characters" in data:
+                candidates.append(data)
+            pos = end  # 整个对象跳过（不是矩阵的对象也一样）
+        if len(candidates) > 1:
+            raise MatrixContractError([
+                f"响应中含有 {len(candidates)} 份含 characters 的 JSON 对象，无法判断哪一份是最终答案；"
+                "请只输出一份信息矩阵（不要附草稿或第二版，也不要重复提示词里的格式示例）"
+            ])
+        return candidates[0] if candidates else None
 
-        # Strategy 2: Find outermost { } via brace counting for inline JSON
-        in_json = False
-        brace_depth = 0
-        json_start = json_end = None
-        for i, ch in enumerate(content):
-            if ch == '{' and not in_json:
-                in_json = True
-                json_start = i
-                brace_depth = 1
-            elif ch == '{' and in_json:
-                brace_depth += 1
-            elif ch == '}' and in_json:
-                brace_depth -= 1
-                if brace_depth == 0:
-                    json_end = i + 1
-                    candidate = content[json_start:json_end]
-                    if '"characters"' in candidate and '"event_cognitions"' in candidate:
-                        try:
-                            return _json.loads(candidate)
-                        except Exception:
-                            pass
-                    in_json = False
+    @staticmethod
+    def _example_echo_problems(data) -> list[str]:
+        """回复是否照抄了 Q1 提示词里的格式示例：任一字符串值仍是示例的占位文字即视为照抄。
 
-        return None
+        示例本身能通过矩阵契约（契约只管结构），所以不能指望校验器拦下它；在这里按占位文字拦。
+        判断见 is_example_placeholder_text：标记的写法差异（括号半角/全角、缺右括号、夹空白）与
+        「只删了标记」都算照抄，不只认字面完全相同的「（示例）」。
+        用显式栈遍历，不引入新的递归深度风险。
+        """
+        hits: list[str] = []
+        stack = [("", data)]
+        while stack:
+            path, value = stack.pop()
+            if isinstance(value, str):
+                if is_example_placeholder_text(value):
+                    hits.append(path or "(根)")
+            elif isinstance(value, dict):
+                stack.extend((f"{path}.{key}" if path else str(key), item) for key, item in value.items())
+            elif isinstance(value, list):
+                stack.extend((f"{path}[{index}]", item) for index, item in enumerate(value))
+        if not hits:
+            return []
+        hits.sort()
+        shown = "、".join(hits[:3]) + ("……" if len(hits) > 3 else "")
+        return [
+            f"响应照抄了提示词里的格式示例：{len(hits)} 处文字仍含占位标记「{EXAMPLE_PLACEHOLDER_MARK}」"
+            f"或与示例的占位文字相同（如 {shown}）；示例只说明格式，必须依据 brief 与机制设计重新创作"
+        ]
+
+    @staticmethod
+    def _render_matrix_markdown(matrix: CharacterMatrix) -> str:
+        """把校验通过的矩阵渲染成 information_matrix.md（Q2-Q6、审计与 PDF 读到的就是这份内容）。
+
+        只含矩阵本身，不含 meta（时间戳、提交号只属于 state/character_matrix.json）。
+        """
+        body = matrix.model_dump_json(ensure_ascii=False, indent=2, exclude={"meta"})
+        return (
+            "# 信息矩阵\n\n"
+            "> 由通过校验的结构化矩阵生成，内容与 state/character_matrix.json 一致。\n\n"
+            f"```json\n{body}\n```\n"
+        )
 
     def run_stage_3(self) -> bool:
         """阶段3：视觉物料
@@ -572,735 +719,234 @@ class PhaseRunner:
             is_prototype=self.state.is_prototype,
         )
 
-    def run_expand(self) -> bool:
-        """expand：将原型扩写为完整版本（带并发控制）
+    last_expand_result = None
 
-        Phase 1: 扩写事件线和信息矩阵（单次 LLM 调用）
-        Phase 2: 并行生成 4 个新角色剧本（RateLimiter 控制并发）
+    def run_expand(self, *, confirm=None, accept_overwrite: bool = False) -> bool:
+        """expand：把原型（2 人 3 事件）扩写为完整版（6 人 7 事件）。
+
+        在内存里生成并校验完整候选，作者确认（confirm 回调或 accept_overwrite）后才备份并覆盖；
+        没有确认入口时在调用模型之前就失败。任何失败都不改动作品。结果见 last_expand_result。
         """
-        self.console.print("[cyan]正在 expand 原型为完整版本...[/cyan]")
+        from murder_wizard.cli.expand_flow import ExpandFlow
+        from murder_wizard.wizard.expansion import ExpandStatus
 
+        self.console.print("[cyan]正在 expand 原型为完整版本...[/cyan]")
         if not self.state.is_prototype:
             self.console.print("[yellow]当前不是原型，跳过 expand[/yellow]")
+            from murder_wizard.wizard.expansion import ExpandResult
+            self.last_expand_result = ExpandResult(ExpandStatus.NOT_PROTOTYPE)
             return False
+        self.last_expand_result = ExpandFlow(self, confirm=confirm, accept_overwrite=accept_overwrite).run()
+        return self.last_expand_result.status is ExpandStatus.APPLIED
 
-        try:
-            from murder_wizard.llm.rate_limit import RateLimiter
+    # ──────────────────────────────────────────────────────────────────
+    # 完整穿帮审计（R05/R06）：默认只读；解析失败 = 未完成；修复只在作者显式接受后写入
+    # ──────────────────────────────────────────────────────────────────
 
-            # 读取原型内容
-            outline = self.state.outline or ""
-            mechanism = (self.session.project_path / "mechanism.md").read_text(encoding="utf-8") if (self.session.project_path / "mechanism.md").exists() else ""
-            characters = (self.session.project_path / "characters.md").read_text(encoding="utf-8") if (self.session.project_path / "characters.md").exists() else ""
-
-            # ========== Phase 1: 扩写事件线和信息矩阵 ==========
-            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
-                task = progress.add_task("扩写事件线和信息矩阵...", total=None)
-
-                phase1_prompt = self._build_expand_phase1_prompt(outline, mechanism, characters)
-                phase1_response = self._call_llm(
-                    phase1_prompt,
-                    system=self._loader.system_mechanism_designer(self.state.story_type),
-                    operation="expand_phase1"
-                )
-
-            self._show_cost_warning(phase1_response.cost)
-
-            # ========== Phase 2: 并行生成 4 个新角色剧本 ==========
-            self.console.print("[cyan]并行生成新角色剧本（最多2个并发）...[/cyan]")
-
-            # 解析 Phase 1 结果，确定 4 个新角色及其设定
-            new_chars_prompt = self._build_new_chars_prompt(phase1_response.content)
-            new_chars_response = self._call_llm(
-                new_chars_prompt,
-                system=self._loader.system_script_writer(self.state.story_type),
-                operation="expand_parse_chars"
-            )
-
-            # 解析出新角色列表（从 Phase 1 结果中提取）
-            char_names = self._parse_new_character_names(new_chars_response.content, existing_count=2)
-            if not char_names:
-                # 降级：无法解析时使用单次扩写
-                self.console.print("[yellow]无法解析新角色，并发生成跳过，使用单次扩写[/yellow]")
-                return self._expand_single_pass(outline, mechanism, characters, phase1_response.content)
-
-            self.console.print(f"[cyan]新角色：{', '.join(char_names)}[/cyan]")
-
-            # 并行生成角色剧本
-            limiter = RateLimiter(max_concurrent=2, delay_between_calls=1.0)
-
-            # 构建并行任务：每个新角色一个任务
-            tasks = []
-            for char_name in char_names:
-                tasks.append((
-                    char_name,
-                    (outline, mechanism, phase1_response.content, char_name),
-                    {},
-                ))
-
-            def call_char_script(o, m, p1, name):
-                """接受 4 个独立参数（由 run_parallel 的 *args 展开而来）"""
-                prompt = self._build_single_char_prompt(o, m, p1, name)
-                return self._call_llm(
-                    prompt,
-                    system=self._loader.system_script_writer(self.state.story_type),
-                    operation=f"expand_char_{name}"
-                )
-
-            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
-                task = progress.add_task("生成角色剧本...", total=None)
-                # run_parallel 做 call_fn(*args, **kwargs)，
-                # args = (outline, mechanism, phase1_response.content, char_name) 共 4 个元素，
-                # 故 call_char_script 接收 4 个独立参数而非 tuple
-                char_results = limiter.run_parallel(tasks, call_char_script)
-
-            # 汇总结果
-            total_cost = phase1_response.cost + new_chars_response.cost
-            char_contents = []
-            for char_name, response in char_results:
-                if response is not None:
-                    char_contents.append(f"\n\n## {char_name}\n\n{response.content}")
-                    total_cost += response.cost
-                else:
-                    self.console.print(f"[red]角色 {char_name} 生成失败[/red]")
-
-            # ========== 保存结果 ==========
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            if (self.session.project_path / "characters.md").exists():
-                (self.session.project_path / "characters.md").rename(
-                    self.session.project_path / f"characters.md.proto.{timestamp}"
-                )
-            if (self.session.project_path / "information_matrix.md").exists():
-                (self.session.project_path / "information_matrix.md").rename(
-                    self.session.project_path / f"information_matrix.md.proto.{timestamp}"
-                )
-
-            # 组装完整角色剧本
-            full_script = self._assemble_expanded_script(
-                phase1_response.content, char_contents, char_names
-            )
-
-            chars_file = self.session.project_path / "characters.md"
-            chars_file.write_text(full_script, encoding="utf-8")
-
-            # 保存更新后的信息矩阵（从 Phase 1 结果提取）
-            matrix_content = self._extract_matrix_from_phase1(phase1_response.content)
-            if matrix_content:
-                matrix_file = self.session.project_path / "information_matrix.md"
-                matrix_file.write_text(matrix_content, encoding="utf-8")
-
-            self.state.characters = {"raw": full_script}
-            self.state.is_prototype = False
-            self.session.save(self.state)
-
-            self.console.print(f"[green]expand 完成！[/green]")
-            self._show_cost_warning(total_cost)
-            return True
-
-        except Exception as e:
-            self.console.print(f"[red]expand 失败：{e}[/red]")
-            import traceback
-            traceback.print_exc()
-            return False
-
-    def _build_expand_phase1_prompt(self, outline: str, mechanism: str, characters: str) -> str:
-        """构建 expand Phase 1 prompt：扩写事件线和信息矩阵"""
-        return f"""将以下原型剧本扩写为完整版本。
-
-原型大纲：
-{outline}
-
-原型机制：
-{mechanism}
-
-原型角色：
-{characters}
-
-Phase 1 任务：
-1. 将事件从3条扩写到5-7条，保持原型事件顺序
-2. 设计4个新角色的基本设定（背景、阵营、关键秘密）
-3. 更新信息矩阵（6人 x 5-7事件）
-4. 确定结局和核心冲突
-
-请输出：
-- 扩写后的事件列表（按时间顺序）
-- 4个新角色的基本设定
-- 更新的信息矩阵（Markdown 表格）
-- 结局概述
-
-格式：Markdown，清晰分区"""
-
-    def _build_new_chars_prompt(self, phase1_content: str) -> str:
-        """构建解析新角色的 prompt"""
-        return f"""从以下扩写内容中，列出需要生成剧本的4个新角色名字。
-
-内容：
-{phase1_content}
-
-请只输出4个角色名字，每行一个，格式：角色1: 名字
-不要输出其他内容。"""
-
-    def _parse_new_character_names(self, content: str, existing_count: int = 2) -> list[str]:
-        """从 Phase 1 结果中解析出新角色名字列表"""
-        lines = content.strip().split('\n')
-        names = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            # 跳过 markdown 标题
-            if line.startswith('#'):
-                continue
-            # 尝试提取 "角色X: 名字" 或 "名字" 格式
-            if ':' in line:
-                name = line.split(':', 1)[1].strip()
-            else:
-                name = line.strip('-*# ').strip()
-            if name and len(name) < 20:
-                names.append(name)
-            if len(names) >= 4:
-                break
-        return names[:4]
-
-    def _build_single_char_prompt(self, outline: str, mechanism: str, phase1_content: str, char_name: str) -> str:
-        """为单个角色生成剧本的 prompt"""
-        return f"""基于以下信息，为角色「{char_name}」生成完整的角色剧本。
-
-原大纲：
-{outline}
-
-机制设计：
-{mechanism}
-
-扩写内容（Phase 1 结果）：
-{phase1_content}
-
-请为「{char_name}」生成：
-1. 角色背景故事（200字）
-2. 角色在各个事件中的经历（按时间顺序，对应扩写后的5-7个事件）
-3. 角色视角的"真相"（该角色认为发生了什么）
-4. 角色隐藏的秘密
-5. 角色需要隐瞒的信息
-
-格式：Markdown，以 ## {char_name} 开头"""
-
-    def _assemble_expanded_script(self, phase1_content: str, char_contents: list[str], char_names: list[str]) -> str:
-        """组装最终的扩写剧本"""
-        parts = [phase1_content]
-        for content in char_contents:
-            parts.append(content)
-        return "\n\n".join(parts)
-
-    def _extract_matrix_from_phase1(self, phase1_content: str) -> str | None:
-        """从 Phase 1 结果中提取信息矩阵部分"""
-        lines = phase1_content.split('\n')
-        in_matrix = False
-        matrix_lines = []
-        for line in lines:
-            if '信息矩阵' in line or 'information matrix' in line.lower():
-                in_matrix = True
-            if in_matrix:
-                matrix_lines.append(line)
-                # 检测矩阵结束（下一个大标题或非表格行）
-                if line.startswith('#') and '信息矩阵' not in line:
-                    break
-        if matrix_lines:
-            return '\n'.join(matrix_lines[:-1]) if matrix_lines[-1].startswith('#') else '\n'.join(matrix_lines)
-        return None
-
-    def _expand_single_pass(self, outline: str, mechanism: str, characters: str, phase1_content: str) -> bool:
-        """降级路径：无法并发时使用单次 LLM 调用完成 expand"""
-        self.console.print("[yellow]使用单次扩写模式[/yellow]")
-        try:
-            single_prompt = f"""将以下原型剧本扩写为完整6人版本。
-
-原型大纲：
-{outline}
-
-原型机制：
-{mechanism}
-
-原型角色：
-{characters}
-
-Phase 1 扩写内容：
-{phase1_content}
-
-请生成完整的角色剧本（6人全部），格式：Markdown。
-
-扩写要求：
-1. 角色从2人扩写到6人
-2. 事件从3条扩写到5-7条
-3. 保持原有角色设定不变
-4. 新角色要与原有角色逻辑自洽
-"""
-            response = self._call_llm(
-                single_prompt,
-                system=self._loader.system_mechanism_designer(self.state.story_type),
-                operation="expand_single"
-            )
-
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            if (self.session.project_path / "characters.md").exists():
-                (self.session.project_path / "characters.md").rename(
-                    self.session.project_path / f"characters.md.proto.{timestamp}"
-                )
-            if (self.session.project_path / "information_matrix.md").exists():
-                (self.session.project_path / "information_matrix.md").rename(
-                    self.session.project_path / f"information_matrix.md.proto.{timestamp}"
-                )
-
-            chars_file = self.session.project_path / "characters.md"
-            chars_file.write_text(response.content, encoding="utf-8")
-
-            self.state.characters = {"raw": response.content}
-            self.state.is_prototype = False
-            self.session.save(self.state)
-
-            self.console.print(f"[green]expand 完成（单次模式）[/green]")
-            self._show_cost_warning(response.cost)
-            return True
-        except Exception as e:
-            self.console.print(f"[red]单次扩写也失败了：{e}[/red]")
-            return False
-
+    AUDIT_SYSTEM = {
+        "matrix": "你是一个严格的剧本杀穿帮审计员，擅长逐格核对信息矩阵，发现最隐蔽的逻辑矛盾。",
+        "mechanism": "你是一个专业的剧本杀平衡性分析师，检查机制与角色行为的一致性。",
+        "ending": "你是一个严格的剧本杀结局审计员，检查结局是否合理、是否有唯一解。",
+    }
 
     def run_audit(self, force: bool = False) -> bool:
-        """完整穿帮审计：Auditor → Reviser → Re-audit 循环，直到 P0 全部清除。
-
-        最多循环 3 次。每次循环：
-        1. 运行三轮审计（矩阵 / 机制 / 结局）
-        2. 如果发现 P0 问题 → Reviser 自动修复
-        3. 用修复后的内容重新审计
-        4. P0 为零或达到最大循环次数 → 停止
-
-        不同于阶段2后自动运行的轻量检查，audit 是独立命令，
-        做深度分析，包括：角色x事件矩阵逐格核对、逻辑漏洞、
-        阵营矛盾、结局合理性等。
-
-        Args:
-            force: 如果为 True，即使仍有未解决的 P0 也继续（跳过 known-P0 检查）
-        """
-        MAX_ITERATIONS = 3
-        KNOWN_P0_FILE = self.session.project_path / ".known_p0"
-        self.console.print("[cyan]运行完整穿帮审计（Auditor → Reviser 循环）...[/cyan]")
-
-        characters_file = self.session.project_path / "characters.md"
-        matrix_file = self.session.project_path / "information_matrix.md"
-        mechanism_file = self.session.project_path / "mechanism.md"
-
-        if not characters_file.exists():
-            self.console.print("[red]缺少 characters.md，请先完成阶段2[/red]")
-            return False
-        if not matrix_file.exists():
-            self.console.print("[red]缺少 information_matrix.md，请先完成阶段2[/red]")
-            return False
-
-        current_characters = characters_file.read_text(encoding="utf-8")
-        current_matrix = matrix_file.read_text(encoding="utf-8")
-        mechanism = mechanism_file.read_text(encoding="utf-8") if mechanism_file.exists() else ""
-
-        all_audit_rounds: list[dict] = []
-        total_cost = 0.0
-
+        """兼容包装：仅当审计 PASSED（模型未报告 P0）时返回 True。--force 已弃用，不改变结论。"""
         try:
-            from rich.progress import Progress, SpinnerColumn, TextColumn
-
-            for iteration in range(1, MAX_ITERATIONS + 1):
-                self.console.print(f"\n[bold cyan]═══ 审计循环第 {iteration}/{MAX_ITERATIONS} ═══[/bold cyan]")
-
-                with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
-                    task = progress.add_task("深度审计中...", total=None)
-
-                    # 第一步：角色x事件逐格检查
-                    response1 = self._call_llm(
-                        self._build_audit_matrix_prompt(current_characters, current_matrix),
-                        system="你是一个严格的剧本杀穿帮审计员，擅长逐格核对信息矩阵，发现最隐蔽的逻辑矛盾。",
-                        operation=f"audit_matrix_check_r{iteration}"
-                    )
-
-                    # 第二步：机制一致性检查
-                    response2 = self._call_llm(
-                        self._build_audit_mechanism_prompt(current_characters, current_matrix, mechanism),
-                        system="你是一个专业的剧本杀平衡性分析师，检查机制与角色行为的一致性。",
-                        operation=f"audit_mechanism_check_r{iteration}"
-                    )
-
-                    # 第三步：结局逻辑验证
-                    response3 = self._call_llm(
-                        self._build_audit_ending_prompt(current_characters, current_matrix),
-                        system="你是一个严格的剧本杀结局审计员，检查结局是否合理、是否有唯一解。",
-                        operation=f"audit_ending_check_r{iteration}"
-                    )
-
-                p0_count = self._count_all_p0_issues(
-                    response1.content, response2.content, response3.content
-                )
-                total_cost += response1.cost + response2.cost + response3.cost
-
-                all_audit_rounds.append({
-                    "iteration": iteration,
-                    "p0": p0_count,
-                    "r1": response1.content,
-                    "r2": response2.content,
-                    "r3": response3.content,
-                })
-
-                self.console.print(f"[{'green' if p0_count == 0 else 'yellow'}]审计完成：P0 问题 {p0_count} 个[/{'green' if p0_count == 0 else 'yellow'}]")
-
-                if p0_count == 0:
-                    self.console.print("[green]✓ 所有 P0 问题已清除，审计通过[/green]")
-                    break
-
-                if iteration == MAX_ITERATIONS:
-                    self.console.print(f"[yellow]达到最大循环次数 ({MAX_ITERATIONS})，仍有 {p0_count} 个 P0 问题[/yellow]")
-                    self.console.print("[dim]使用 --force 强制推进，或在 .known_p0 中标记已知可接受的 P0[/dim]")
-                    break
-
-                # 有 P0 → 运行 Reviser
-                self.console.print(f"[yellow]发现 {p0_count} 个 P0 问题，启动 Reviser...[/yellow]")
-
-                # 构建审计报告摘要
-                audit_summary = self._compile_audit_summary(
-                    response1.content, response2.content, response3.content
-                )
-
-                revision = self._run_reviser(
-                    audit_summary,
-                    current_characters,
-                    current_matrix,
-                    mechanism,
-                )
-
-                if revision:
-                    # 从 Reviser 输出中提取修复后的角色剧本
-                    revised = self._extract_revised_content(revision, current_characters)
-                    if revised != current_characters:
-                        # 保存修复版本
-                        revised_file = self.session.project_path / f"characters.revised_r{iteration}.md"
-                        revised_file.write_text(revised, encoding="utf-8")
-                        current_characters = revised
-                        self.console.print(f"[green]已应用修复，版本保存到：{revised_file.name}[/green]")
-                    else:
-                        self.console.print("[yellow]Reviser 未改变内容[/yellow]")
-                else:
-                    self.console.print("[yellow]Reviser 未能完成修复[/yellow]")
-
-            # 如果有修订内容，写回 characters.md（供后续阶段使用）
-            original_characters = characters_file.read_text(encoding="utf-8")
-            if current_characters != original_characters:
-                characters_file.write_text(current_characters, encoding="utf-8")
-                self.console.print("[green]✓ 修订内容已写回 characters.md[/green]")
-
-            # 生成最终综合报告
-            report = self._compile_audit_report(
-                current_characters, current_matrix, mechanism, all_audit_rounds
-            )
-
-            report_file = self.session.project_path / "audit_report.md"
-            report_file.write_text(report, encoding="utf-8")
-
-            self._show_cost_warning(total_cost)
-            self.console.print(f"[green]审计报告已保存到：{report_file}[/green]")
-
-            # 问题摘要
-            final_p0 = all_audit_rounds[-1]["p0"]
-
-            # 加载已知可接受的 P0
-            known_p0s = set()
-            if KNOWN_P0_FILE.exists():
-                try:
-                    known_p0s = set(
-                        line.strip() for line in KNOWN_P0_FILE.read_text(encoding="utf-8").splitlines()
-                        if line.strip() and not line.startswith("#")
-                    )
-                    self.console.print(f"[dim]已加载 {len(known_p0s)} 个已知可接受 P0[/dim]")
-                except Exception:
-                    known_p0s = set()
-
-            unresolved_p0 = final_p0 - len(known_p0s)
-
-            if final_p0 == 0:
-                self.console.print("[green]✓ 审计通过，所有 P0 问题已清除[/green]")
-                return True
-            elif force:
-                last = all_audit_rounds[-1]
-                p0_summaries = self._extract_p0_summaries(last["r1"], last["r2"], last["r3"])
-                self.console.print(f"[yellow]⚠ --force 模式：仍有 {unresolved_p0} 个未解决 P0（{len(known_p0s)} 个已标记为已知可接受）[/yellow]")
-                if p0_summaries:
-                    self.console.print("[yellow]被忽略的 P0 问题：[/yellow]")
-                    for s in p0_summaries:
-                        self.console.print(f"[yellow]{s}[/yellow]")
-                else:
-                    self.console.print(f"[dim]详细问题见 audit_report.md[/dim]")
-                return True
-            elif unresolved_p0 == 0:
-                self.console.print(f"[yellow]⚠ 仍有 {final_p0} 个 P0，但全部已标记为已知可接受（.known_p0）[/yellow]")
-                self.console.print("[dim]使用 --force 可强制推进，或编辑 .known_p0 移除标记[/dim]")
-                return True
-            else:
-                last = all_audit_rounds[-1]
-                p0_summaries = self._extract_p0_summaries(last["r1"], last["r2"], last["r3"])
-                self.console.print(f"[yellow]最终仍有 {unresolved_p0} 个未解决 P0（{len(known_p0s)} 个已标记为已知可接受）[/yellow]")
-                if p0_summaries:
-                    self.console.print("[yellow]未解决的 P0 问题：[/yellow]")
-                    for s in p0_summaries:
-                        self.console.print(f"[yellow]{s}[/yellow]")
-                else:
-                    self.console.print(f"[dim]详细问题见 audit_report.md[/dim]")
-                self.console.print(f"[dim]在 .known_p0 文件中添加 P0 描述可将其标记为已知可接受[/dim]")
-                return False
-
+            outcome = self.run_audit_checked(force=force)
+        except KeyboardInterrupt:
+            raise
         except Exception as e:
-            self.console.print(f"[red]审计失败：{e}[/red]")
-            import traceback
-            traceback.print_exc()
+            self.console.print(f"[red]审计失败：{escape(str(e))}[/red]")
             return False
+        return bool(outcome)
 
-    def _compile_audit_summary(self, r1: str, r2: str, r3: str) -> str:
-        """编译三轮审计的摘要，用于输入给 Reviser。"""
-        return f"""# 穿帮审计摘要
-
-## 第一轮：信息矩阵逐格审计
-{r1}
-
-## 第二轮：机制一致性审计
-{r2}
-
-## 第三轮：结局合理性审计
-{r3}
-"""
-
-    def _compile_audit_report(
-        self,
-        characters: str,
-        matrix: str,
-        mechanism: str,
-        all_audit_rounds: list[dict],
-    ) -> str:
-        """编译完整审计报告（支持多轮循环）。"""
-        rounds_md = []
-        for rd in all_audit_rounds:
-            rounds_md.append(
-                f"### 第 {rd['iteration']} 轮（修复前）\n\n"
-                f"**P0 问题：{rd['p0']} 个**\n\n"
-                f"#### 信息矩阵审计\n{rd['r1']}\n\n"
-                f"#### 机制一致性审计\n{rd['r2']}\n\n"
-                f"#### 结局合理性审计\n{rd['r3']}"
-            )
-
-        synthesis = self._loader.consistency_synthesis(
-            round1_result=all_audit_rounds[-1]["r1"],
-            round2_result=all_audit_rounds[-1]["r2"],
-            round3_result=all_audit_rounds[-1]["r3"],
-            audit_timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
-            commit_hash="auto",
+    def run_audit_checked(self, force: bool = False) -> AuditOutcome:
+        """真正的审计入口：返回 AuditOutcome（passed / waived / blocked / incomplete）。"""
+        self.console.print("[cyan]运行完整穿帮审计（只读：不会改写作品）...[/cyan]")
+        materials = AuditMaterials.from_dir(
+            self.session.project_path, is_prototype=bool(self.state.is_prototype)
         )
-
-        return f"""# 剧本杀完整审计报告
-
-> 由 murder-wizard audit 自动生成
-> 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}
-> 审计轮次：{len(all_audit_rounds)}
-
----
-
-## 审计历史
-
-""" + "\n\n---\n\n".join(rounds_md) + f"""
-
----
-
-## 综合评估
-
-{synthesis}
-
----
-
-## 修复历史
-
-{self._build_revision_history(all_audit_rounds)}
-
-*本报告由 AI 自动生成，仅供参考。实际体验测试仍不可替代。*
-"""
-
-    def _build_revision_history(self, all_audit_rounds: list[dict]) -> str:
-        """Build revision history section for the report."""
-        if len(all_audit_rounds) == 1:
-            return "无修复轮次 — 首轮审计即通过。"
-
-        lines = []
-        for i in range(1, len(all_audit_rounds)):
-            prev = all_audit_rounds[i - 1]
-            curr = all_audit_rounds[i]
-            delta = curr["p0"] - prev["p0"]
-            if delta < 0:
-                status = f"✓ 清除 {-delta} 个 P0"
-            elif delta == 0:
-                status = "无变化"
-            else:
-                status = f"⚠ 新增 {delta} 个 P0"
-            lines.append(
-                f"- 第 {i} 轮 P0: {prev['p0']} → 第 {i+1} 轮 P0: {curr['p0']} ({status})"
-            )
-        return "\n".join(lines) if lines else "无修复轮次。"
-
-    def _extract_revised_content(self, revision_output: str, original: str) -> str:
-        """从 Reviser 输出中提取修复后的角色剧本内容。
-
-        只接受包含实际角色剧本内容的章节（角色名、场景描述、对话等）。
-        不会接受 ## 修复清单 这种只包含修复描述的章节。
-        如果找不到有效的完整剧本内容，保留原内容。
-        """
-        import re
-
-        # Required markers that indicate actual script content (not just a fix list)
-        script_markers = ["角色", "场景", "剧本", "对白", "叙述", "事件"]
-
-        # Section-based extraction: only these specific headers are valid
-        # DO NOT accept ## 修复清单 — that's a bullet list, not script content
-        patterns = [
-            r"(?<=## 完整角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
-            r"(?<=## 修复后角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
-            r"(?<=## 角色剧本\n)([\s\S]+?)(?=\n## |\Z)",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, revision_output, re.DOTALL)
-            if match:
-                content = match.group(1).strip()
-                # Must contain at least 3 script-like markers to be valid
-                marker_count = sum(1 for m in script_markers if m in content)
-                if marker_count >= 3 and len(content) > 200:
-                    return content
-
-        # Fallback: extract from ```markdown code blocks
-        code_blocks = re.findall(r"```(?:markdown)?\n(.*?)```", revision_output, re.DOTALL)
-        for block in code_blocks:
-            block = block.strip()
-            marker_count = sum(1 for m in script_markers if m in block)
-            # Require at least 3 script markers AND block must be >30% of original size
-            if marker_count >= 3 and len(block) > len(original) * 0.3:
-                return block
-
-        # No valid extraction possible
-        return original
-
-    def _build_audit_matrix_prompt(self, characters: str, matrix: str) -> str:
-        """构建信息矩阵逐格审计 prompt"""
-        return self._loader.consistency_round1(
-            characters_content=characters,
-            matrix_content=matrix,
-            is_prototype=self.state.is_prototype,
-        )
-
-    def _build_audit_mechanism_prompt(self, characters: str, matrix: str, mechanism: str) -> str:
-        """构建机制一致性审计 prompt"""
-        return self._loader.consistency_round2(
-            characters_content=characters,
-            matrix_content=matrix,
-            mechanism_content=mechanism,
-            is_prototype=self.state.is_prototype,
-        )
-
-    def _build_audit_ending_prompt(self, characters: str, matrix: str) -> str:
-        """构建结局合理性审计 prompt"""
-        return self._loader.consistency_round3(
-            full_script=characters,
-            matrix_content=matrix,
-            mechanism_content="",  # not needed for round 3
-        )
-
-    def _run_reviser(
-        self,
-        audit_report: str,
-        characters: str,
-        matrix: str,
-        mechanism: str,
-    ) -> str | None:
-        """运行 Reviser — 自动修复 P0/P1 问题。
-
-        Returns revised characters content or None if nothing was revised.
-        """
-        self.console.print("[cyan]Reviser：自动修复 P0/P1 问题...[/cyan]")
-
-        prompt = self._loader.consistency_reviser(
-            audit_report=audit_report,
-            characters_content=characters,
-            matrix_content=matrix,
-            mechanism_content=mechanism,
-        )
-
+        waivers = load_waivers(self.session.project_path / ".known_p0")
+        outcome = AuditOutcome.start(materials, model=str(getattr(self.llm, "model", "")), forced=force)
+        if force:
+            outcome.notes.append("--force 已弃用，不改变审计结论")
         try:
-            response = self._call_llm(
-                prompt,
-                system="你是一个专业的剧本杀穿帮修正员，擅长在不破坏故事完整性的前提下修复逻辑漏洞。",
-                operation="audit_reviser",
+            self._execute_audit(outcome, waivers, suggest_fixes=True)
+        except KeyboardInterrupt:
+            outcome.notes.append("用户中断，未运行的轮次标记为 not_run")
+            self._finalize_audit(outcome, waivers)
+            self._write_audit_report(outcome)
+            raise
+        self._write_audit_report(outcome)
+        self._print_audit_summary(outcome)
+        self._show_cost_warning(outcome.cost)
+        return outcome
+
+    def audit_materials(
+        self, materials: AuditMaterials, *, waivers: Optional[WaiverFile] = None,
+        suggest_fixes: bool = False, force: bool = False,
+    ) -> AuditOutcome:
+        """对给定材料审计（如 expand 候选）：不写报告、不读 .known_p0、不提示输入。"""
+        outcome = AuditOutcome.start(materials, model=str(getattr(self.llm, "model", "")), forced=force)
+        self._execute_audit(outcome, waivers or WaiverFile(), suggest_fixes=suggest_fixes)
+        return outcome
+
+    def apply_audit_fixes(self, outcome: AuditOutcome, accepted_ids) -> ApplyResult:
+        """把作者显式接受的补丁写入作品（先备份；失败回滚）。审计结论不变。"""
+        result = apply_audit_patches(
+            self.session.project_path, outcome.materials, outcome.proposals, accepted_ids
+        )
+        outcome.applied = result
+        if not result.error:
+            self._write_audit_report(outcome)
+        return result
+
+    def _finalize_audit(self, outcome: AuditOutcome, waivers: WaiverFile) -> None:
+        issues = list(outcome.static_issues)
+        for kind in ROUNDS:
+            r = outcome.rounds[kind]
+            if r.status in ("ok", "truncated"):
+                issues.extend(r.issues)
+        issues, outcome.waiver = apply_waivers(assign_refs(issues), waivers)
+        outcome.issue_list = issues
+
+    def _execute_audit(self, outcome: AuditOutcome, waivers: WaiverFile, suggest_fixes: bool) -> None:
+        materials = outcome.materials
+        if materials.problems:
+            self.console.print("[red]审计材料不完整，未调用模型：[/red]")
+            for p in materials.problems:
+                self.console.print(f"[red]  - {escape(p)}[/red]")
+            self._finalize_audit(outcome, waivers)
+            return
+        total = sum(materials.round_chars(k) for k in ROUNDS)
+        self.console.print(
+            f"[dim]将向模型服务商发送 {len(materials.texts)} 份材料，三轮合计约 {total} 字符（不截断）[/dim]"
+        )
+        outcome.static_issues = run_static_checks(materials)
+        aborted = False
+        for kind in ROUNDS:
+            if aborted:
+                continue
+            aborted = not self._run_audit_round(kind, outcome)
+        self._finalize_audit(outcome, waivers)
+        if suggest_fixes and outcome.status is not AuditStatus.INCOMPLETE:
+            self._suggest_fixes(outcome)
+
+    def _run_audit_round(self, kind: str, outcome: AuditOutcome) -> bool:
+        """跑一轮审计。返回 False 表示 LLM 调用失败（其后轮次不再运行）。"""
+        materials = outcome.materials
+        result = outcome.rounds[kind]
+        n = ROUND_NUMBER[kind]
+        try:
+            prompt = self._loader.audit_round(
+                kind,
+                is_prototype=bool(self.state.is_prototype),
+                char_count=materials.char_count,
+                event_count=materials.event_count,
+                max_issues=MAX_ISSUES_PER_ROUND,
+                output_contract=output_contract(kind, materials),
+                **materials.blocks_for(kind),
             )
-
-            # 检查是否实际做了修复
-            content = response.content.lower()
-            if "修复" in content or "修改" in content or "已修复" in content:
-                self.console.print("[green]✓ Reviser 完成了修复[/green]")
-                return response.content
-            else:
-                self.console.print("[yellow]⚠ Reviser 未发现问题或无需修复[/yellow]")
-                return None
-
+        except (PromptRenderError, KeyError) as e:
+            result.status, result.reason = "render_failed", str(e)
+            self.console.print(f"[red]第{n}轮提示词渲染失败，未调用模型：{escape(str(e))}[/red]")
+            return True
+        result.prompt_chars = len(prompt)
+        system = self.AUDIT_SYSTEM[kind]
+        operation = f"audit_round{n}"
+        self.console.print(f"[cyan]第{n}轮 {ROUND_TITLE[kind]}：{len(prompt)} 字符，含 {len(ROUND_FILES[kind])} 份材料[/cyan]")
+        try:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=self.console) as progress:
+                progress.add_task("深度审计中...", total=None)
+                resp = self._call_llm(prompt, system=system, operation=operation)
         except Exception as e:
-            self.console.print(f"[yellow]Reviser 调用失败：{e}[/yellow]")
-            return None
+            result.status, result.reason = "call_failed", str(e)
+            outcome.notes.append(f"第{n}轮模型调用失败，其后轮次未运行：{e}")
+            return False
+        result.cost = resp.cost
+        outcome.cost += resp.cost
+        result.raw = resp.content
+        try:
+            parsed = parse_round_output(kind, resp.content, materials)
+        except AuditParseError as e:
+            result.status, result.reason = "parse_error", str(e)
+            result.hints = hint_lines(resp.content)
+            self.console.print(f"[yellow]第{n}轮输出无法解析：{escape(str(e))}（不计为 0 个 P0）[/yellow]")
+            try:
+                self._cache.invalidate(operation, prompt, system, self.llm.model)
+            except Exception as ce:
+                outcome.notes.append(f"清缓存失败，重跑可能重放同一个坏响应，可用 cache --clear：{ce}")
+            return True
+        result.issues = parsed.issues
+        result.has_more = parsed.has_more
+        result.status = "truncated" if parsed.has_more else "ok"
+        if parsed.has_more:
+            result.reason = "模型声明还有未列出的问题，无法排除被挤出的 P0"
+        return True
 
-    def _count_p0_issues(self, content: str) -> int:
-        """从审计结果中统计 P0 问题数量。
+    def _suggest_fixes(self, outcome: AuditOutcome) -> None:
+        cands = [i for i in outcome.issue_list
+                 if not i.waived and i.severity in ("P0", "P1") and i.file in EDITABLE_FILES][:8]
+        if not cands:
+            return
+        materials = outcome.materials
+        issues_block = "\n".join(
+            f"{i.ref} [{i.severity}] {i.file}「{i.anchor}」：{i.problem}" + (f"（引用：{i.quote}）" if i.quote else "")
+            for i in cands
+        )
+        files_block = "\n\n".join(materials.block(f) for f in dict.fromkeys(i.file for i in cands))
+        try:
+            prompt = self._loader.audit_fixes(
+                is_prototype=bool(self.state.is_prototype),
+                issues_block=issues_block, files_block=files_block, output_contract=fix_contract(),
+            )
+            system = self._loader.system_audit_fixer()
+            resp = self._call_llm(prompt, system=system, operation="audit_fixes")
+        except Exception as e:
+            outcome.fix_note = f"修复建议调用失败（不影响审计结论）：{e}"
+            return
+        outcome.cost += resp.cost
+        try:
+            outcome.proposals, outcome.unfixable = parse_fix_output(resp.content, cands, materials)
+        except AuditParseError as e:
+            outcome.fix_note = f"修复建议无法解析（不影响审计结论）：{e}"
+            try:
+                self._cache.invalidate("audit_fixes", prompt, system, self.llm.model)
+            except Exception:
+                pass
 
-        Catches: P0:3, P0：3, P0（3个）, P0问题3个, 3个P0, P0-3, P0 x 3, 发现3个P0
-        """
-        import re
-        # Primary: explicit count patterns
-        patterns = [
-            r"p0[：: ]+(\d+)",           # P0: 3, P0：5, P0 3
-            r"p0[（(](\d+)[)）]",        # P0（3）, P0(3)
-            r"p0[问题个件]+[：: ]*(\d+)", # P0问题3个, P0个3
-            r"[发现共](\d+)个?p0",        # 发现3个P0, 共3个P0
-            r"p0[-x×](\d+)",             # P0-3, P0x3
-        ]
-        total = 0
-        for pat in patterns:
-            matches = re.findall(pat, content, re.IGNORECASE)
-            total += sum(int(m) for m in matches)
-        if total > 0:
-            return total
-        # Fallback: count standalone P0 markers
-        return content.count("[P0]") + content.count("**P0**") + content.count("P0\n")
+    def _write_audit_report(self, outcome: AuditOutcome) -> None:
+        report = render_report(outcome, generated_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+        path = self.session.project_path / "audit_report.md"
+        tmp = path.with_suffix(".md.tmp")
+        try:
+            tmp.write_text(report, encoding="utf-8")
+            os.replace(tmp, path)
+            outcome.report_path = path
+            outcome.report_error = ""
+        except OSError as e:
+            outcome.report_error = str(e)
+            self.console.print(f"[red]审计报告写入失败：{escape(str(e))}[/red]")
 
-    def _count_all_p0_issues(self, r1: str, r2: str, r3: str) -> int:
-        """统计三轮审计的 P0 总数。"""
-        return self._count_p0_issues(r1) + self._count_p0_issues(r2) + self._count_p0_issues(r3)
-
-    def _extract_p0_summaries(self, r1: str, r2: str, r3: str, max_per_round: int = 3) -> list[str]:
-        """从三轮审计响应中提取 P0 问题描述（最多返回 max_per_round*3 条）。"""
-        summaries = []
-        for label, content in [("矩阵检查", r1), ("机制检查", r2), ("结局检查", r3)]:
-            # 匹配 markdown 表格行：| ... | P0 | ... | 描述 | ... |
-            # 严重程度列可能是第3列，描述列可能是第5列
-            lines = content.splitlines()
-            round_summaries = []
-            for line in lines:
-                if not (line.startswith("|") and "p0" in line.lower()):
-                    continue
-                # 分割表格单元格
-                cells = [c.strip().strip("**") for c in line.split("|")]
-                if len(cells) < 5:
-                    continue
-                # cells[0] 是左侧空白，cells[1] 问题ID, cells[2] 维度, cells[3] 严重程度, cells[4] 事件, cells[5] 问题描述...
-                severity = cells[3].lower() if len(cells) > 3 else ""
-                if "p0" not in severity:
-                    continue
-                desc = cells[5] if len(cells) > 5 else (cells[4] if len(cells) > 4 else "")
-                if desc:
-                    round_summaries.append(f"  [{label}] {desc}")
-            summaries.extend(round_summaries[:max_per_round])
-        return summaries[:max_per_round * 3]
+    def _print_audit_summary(self, outcome: AuditOutcome) -> None:
+        st = outcome.status
+        color = {AuditStatus.PASSED: "green", AuditStatus.WAIVED: "yellow",
+                 AuditStatus.BLOCKED: "red", AuditStatus.INCOMPLETE: "yellow"}[st]
+        self.console.print(f"[{color}]{escape(outcome.headline)}[/{color}]")
+        for i in outcome.p0_unwaived:
+            self.console.print(
+                f"[red]  {i.ref} · {i.key} · {escape(i.dimension)} · {escape(i.file)}「{escape(i.anchor)}」 · {escape(i.problem)}[/red]"
+            )
+        if outcome.p0_unwaived:
+            self.console.print("[dim]确认可接受的 P0，可在 .known_p0 加一行：AUD-xxxxxxxx 理由：…（见 audit_report.md）[/dim]")
+        for label, items in (("未使用的豁免行", outcome.waiver.unused), ("含糊的豁免行", outcome.waiver.ambiguous),
+                             ("过短的豁免行", outcome.waiver.too_short)):
+            for x in items:
+                self.console.print(f"[yellow]  {label}：{escape(x)}[/yellow]")
+        if outcome.waiver.read_error:
+            self.console.print(f"[yellow]  .known_p0 读取失败，未应用豁免：{escape(outcome.waiver.read_error)}[/yellow]")
+        if outcome.report_path:
+            self.console.print(f"[green]审计报告已保存到：{outcome.report_path}[/green]")
 
     def _show_cost_warning(self, cost: float):
         """显示成本警告"""
@@ -1384,6 +1030,50 @@ Phase 1 扩写内容：
 
 原型模式：聚焦{char_count}人版的快速验证流程。
 """
+
+    def run_stage_4_analyze(self) -> bool:
+        """阶段4分析模式：分析 feedback.md 并生成 iteration_report.md（经 _call_llm，成本与缓存照常）。"""
+        root = self.session.project_path
+        feedback_file = root / "feedback.md"
+        if not feedback_file.exists():
+            self.console.print("[yellow]未找到 feedback.md[/yellow]")
+            self.console.print("请先收集玩家反馈，保存到 feedback.md 后再运行分析")
+            return False
+        feedback = feedback_file.read_text(encoding="utf-8")
+        characters = (root / "characters.md").read_text(encoding="utf-8") if (root / "characters.md").exists() else ""
+        mechanism = (root / "mechanism.md").read_text(encoding="utf-8") if (root / "mechanism.md").exists() else ""
+        try:
+            response = self._call_llm(
+                f"""基于以下测试反馈，生成迭代建议：
+
+玩家反馈：
+{feedback}
+
+原角色剧本：
+{characters}
+
+原机制设计：
+{mechanism}
+
+请分析：
+1. 哪些地方存在平衡性问题
+2. 哪些角色体验不佳或过于强大
+3. 机制是否有漏洞或死路
+4. 需要修改的具体内容（角色剧本调整/机制调整）
+5. 优先级排序（高/中/低）
+
+格式：Markdown""",
+                system="你是一个专业的剧本杀平衡性分析师，擅长发现游戏问题并给出具体修改建议。",
+                operation="stage_4_analyze",
+            )
+            report_file = root / "iteration_report.md"
+            report_file.write_text(response.content, encoding="utf-8")
+            self.console.print(f"[green]迭代报告已保存到：{report_file}[/green]")
+            self._show_cost_warning(response.cost)
+            return True
+        except Exception as e:
+            self.console.print(f"[red]分析失败：{escape(str(e))}[/red]")
+            return False
 
     def run_stage_5(self) -> bool:
         """阶段5：商业化
@@ -1477,19 +1167,20 @@ Phase 1 扩写内容：
             for issue in issues:
                 self.console.print(f"  - {issue}")
 
-        # 生成剧本 PDF
-        try:
-            script_pdf = generator.generate_script_pdf()
-            self.console.print(f"[green]剧本 PDF 已生成：{script_pdf}[/green]")
-        except Exception as e:
-            self.console.print(f"[yellow]剧本 PDF 生成失败：{e}[/yellow]")
-
-        # 生成线索卡 PDF
-        try:
-            clue_pdf = generator.generate_clue_cards()
-            self.console.print(f"[green]线索卡 PDF 已生成：{clue_pdf}[/green]")
-        except Exception as e:
-            self.console.print(f"[yellow]线索卡 PDF 生成失败：{e}[/yellow]")
+        # 生成 PDF：必须真的产出非空文件才算成功（失败不能显示为"印刷文件生成完成"）
+        pdf_failures: list[str] = []
+        for label, make in (("剧本 PDF", generator.generate_script_pdf), ("线索卡 PDF", generator.generate_clue_cards)):
+            try:
+                out = make()
+                if not out or not Path(str(out)).is_file() or Path(str(out)).stat().st_size == 0:
+                    raise RuntimeError(f"未生成文件：{out}")
+                self.console.print(f"[green]{label}已生成：{out}[/green]")
+            except Exception as e:
+                pdf_failures.append(f"{label}：{e}")
+                self.console.print(f"[red]{label}生成失败：{escape(str(e))}[/red]")
+        if pdf_failures:
+            self.console.print("[red]阶段6失败：必要的 PDF 未生成，阶段状态未推进。[/red]")
+            return False
 
         # 生成印刷订单信息
         order_info = generator.generate_proof_order()

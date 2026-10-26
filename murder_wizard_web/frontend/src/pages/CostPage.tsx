@@ -1,7 +1,8 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { getCosts } from '../api/files'
 import type { CostSummary } from '../types/api'
+import { useProjectWorkbenchContext } from '../components/layout/ProjectWorkbenchLayout'
 
 // Lazy load named Recharts exports individually
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,9 +49,8 @@ function formatTokens(tokens: number): string {
 }
 
 export default function CostPage() {
-  const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
-  const projectName = decodeURIComponent(name || '')
+  const { projectName } = useProjectWorkbenchContext()
   const [costs, setCosts] = useState<CostSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

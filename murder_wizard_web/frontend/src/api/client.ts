@@ -11,43 +11,81 @@ export function getUserId(): string {
   return id
 }
 
-function getToken(): string | null { return localStorage.getItem(TOKEN_KEY) }
-function setToken(token: string): void { localStorage.setItem(TOKEN_KEY, token) }
+function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+function setToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
 
 let tokenPromise: Promise<void> | null = null
-export async function ensureToken(): Promise<void> {
-  if (getToken()) return
+
+export async function ensureToken(force = false): Promise<void> {
+  if (force) clearToken()
+  if (!force && getToken()) return
   if (tokenPromise) return tokenPromise
+
   tokenPromise = fetch(`${BASE}/user/auth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: getUserId() }),
-  }).then(r => r.json()).then(data => { if (data.token) setToken(data.token) })
-    .catch(() => {}).finally(() => { tokenPromise = null })
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
+      return res.json() as Promise<{ token?: string }>
+    })
+    .then((data) => {
+      if (!data.token) throw new Error('Token response missing token')
+      setToken(data.token)
+    })
+    .finally(() => {
+      tokenPromise = null
+    })
+
+  return tokenPromise
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function fetchWithRetry(path: string, options?: RequestInit, retryOn401 = true): Promise<Response> {
+  await ensureToken()
+
   const token = getToken()
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options?.headers as Record<string, string> | undefined) }
-  if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${BASE}${path}`, { ...options, headers })
-  if (res.status === 401 && token) {
-    localStorage.removeItem(TOKEN_KEY)
-    const retry = getToken()
-    if (retry) {
-      headers['Authorization'] = `Bearer ${retry}`
-      const r = await fetch(`${BASE}${path}`, { ...options, headers })
-      if (!r.ok) { const err = await r.json().catch(() => ({ detail: r.statusText })); throw new Error(err.detail || `HTTP ${r.status}`) }
-      return r.json() as Promise<T>
-    }
+  const headers = new Headers(options?.headers ?? {})
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
   }
-  if (!res.ok) { const err = await res.json().catch(() => ({ detail: res.statusText })); throw new Error(err.detail || `HTTP ${res.status}`) }
+
+  const response = await fetch(`${BASE}${path}`, { ...options, headers })
+  if (response.status !== 401 || !retryOn401) return response
+
+  await ensureToken(true)
+  const refreshed = getToken()
+  const retryHeaders = new Headers(options?.headers ?? {})
+  if (refreshed) retryHeaders.set('Authorization', `Bearer ${refreshed}`)
+  return fetch(`${BASE}${path}`, { ...options, headers: retryHeaders })
+}
+
+export async function fetchWithAuth(path: string, options?: RequestInit): Promise<Response> {
+  return fetchWithRetry(path, options, true)
+}
+
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = new Headers(options?.headers ?? {})
+  if (options?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const res = await fetchWithRetry(path, { ...options, headers })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || `HTTP ${res.status}`)
+  }
   return res.json() as Promise<T>
 }
-
-export function createSSEClient(url: string) {
-  const events = new EventSource(url)
-  return { events, close() { events.close() } }
-}
-
-export { request }

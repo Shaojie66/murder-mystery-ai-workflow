@@ -53,11 +53,13 @@ class SSEConsole(Console):
         # Remove ANSI color codes
         ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
         clean = ansi_escape.sub('', text)
-        # Remove Rich markup like [bold], [/bold], [cyan], etc.
-        rich_markup = re.compile(r'\[/?(?:bold|italic|red|green|yellow|blue|magenta|cyan|white|dim|bright|on)\]')
-        clean = rich_markup.sub('', clean)
-        # Remove other Rich markup patterns
-        clean = re.sub(r'\[/?[^]]+\]', '', clean)
+        # 用 Rich 自己解析标记：真标记被去掉，rich.markup.escape 转义过的 [E4]、[1, 2] 按字面保留
+        from rich.errors import MarkupError
+        from rich.text import Text
+        try:
+            clean = Text.from_markup(clean).plain
+        except MarkupError:
+            pass
         return clean.strip()
 
 
@@ -123,11 +125,17 @@ class PhaseRunnerWeb:
         original = runner._call_llm
 
         def patched(prompt: str, system: str = "", operation: str = "llm_call"):
+            # 缓存命中不产生花费（CLI 与 cost.log 都记 0）：先无副作用地探测，再调用
+            try:
+                hit = runner._cache.get(operation, prompt, system, runner.llm.model) is not None
+            except Exception:  # noqa: BLE001
+                hit = False
             result = original(prompt, system, operation)
             if result:
-                self._total_cost += result.cost
-                self._total_tokens += result.tokens_used
-                self.emit("cost", {"tokens": result.tokens_used, "cost": result.cost, "total_cost": self._total_cost})
+                cost, tokens = (0.0, 0) if hit else (result.cost, result.tokens_used)
+                self._total_cost += cost
+                self._total_tokens += tokens
+                self.emit("cost", {"tokens": tokens, "cost": cost, "total_cost": self._total_cost, "cached": hit})
             return result
 
         runner._call_llm = patched
@@ -150,7 +158,9 @@ class PhaseRunnerWeb:
         self._patch_runner(runner)
 
         try:
-            if stage == 1:
+            if stage == 4 and analyze:
+                success = runner.run_stage_4_analyze()
+            elif stage == 1:
                 success = runner.run_stage_1()
             elif stage == 2:
                 success = runner.run_stage_2()
@@ -188,7 +198,7 @@ class PhaseRunnerWeb:
             return False
 
     async def run_audit(self, force: bool = False) -> bool:
-        """Run the full audit with Reviser auto-fix loop."""
+        """Run the read-only audit; success is True only for status passed."""
         from murder_wizard.cli.phase_runner import PhaseRunner
 
         state = self.session.load()
@@ -200,17 +210,17 @@ class PhaseRunnerWeb:
         self._patch_runner(runner)
 
         try:
-            success = runner.run_audit(force=force)
-            self.emit("audit_complete", {
-                "success": success,
-                "total_cost": self._total_cost,
-            })
+            outcome = runner.run_audit_checked(force=force)
+            success = bool(outcome)
+            payload = outcome.to_summary_dict()
+            payload.update({"success": success, "total_cost": self._total_cost})
+            self.emit("audit_complete", payload)
             return success
         except Exception as e:
             self.emit("error", {"message": str(e), "type": type(e).__name__})
             return False
 
-    async def run_expand(self) -> bool:
+    async def run_expand(self, accept_overwrite: bool = False) -> bool:
         """Run prototype expansion to full version."""
         from murder_wizard.cli.phase_runner import PhaseRunner
 
@@ -223,9 +233,14 @@ class PhaseRunnerWeb:
         self._patch_runner(runner)
 
         try:
-            success = runner.run_expand()
+            success = runner.run_expand(accept_overwrite=accept_overwrite)
+            res = runner.last_expand_result
             self.emit("expand_complete", {
                 "success": success,
+                "status": res.status.value if res else "failed_internal",
+                "problems": list(res.problems) if res else [],
+                "failed_step": res.failed_step if res else None,
+                "backups": dict(res.backups) if res else {},
                 "total_cost": self._total_cost,
             })
             return success

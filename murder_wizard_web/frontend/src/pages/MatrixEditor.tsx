@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { getMatrix, updateMatrixCell, initializeMatrix } from '../api/files'
 import type { CharacterMatrix, CognitiveState } from '../types/api'
+import { useProjectWorkbenchContext } from '../components/layout/ProjectWorkbenchLayout'
 
 const STATE_COLORS: Record<string, string> = {
   '知': 'var(--state-know)',
@@ -22,9 +23,8 @@ const STATE_LABELS: Record<string, string> = {
 }
 
 export default function MatrixEditor() {
-  const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
-  const projectName = decodeURIComponent(name || '')
+  const { projectName, project } = useProjectWorkbenchContext()
 
   const [matrix, setMatrix] = useState<CharacterMatrix | null>(null)
   const [loading, setLoading] = useState(true)
@@ -43,7 +43,7 @@ export default function MatrixEditor() {
     } catch (e: unknown) {
       if ((e as Error).message?.includes('404') || (e as Error).message?.includes('not found')) {
         try {
-          await initializeMatrix(projectName, 6, 7, false)
+          await initializeMatrix(projectName, project.is_prototype ? 2 : 6, project.is_prototype ? 3 : 7, project.is_prototype)
           const data = await getMatrix(projectName)
           setMatrix(data)
         } catch {

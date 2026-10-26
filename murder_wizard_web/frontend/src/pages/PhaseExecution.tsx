@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import type { SSEEvent } from '../types/api'
+import { runPhaseStream, type RunMode } from '../api/phases'
+import { useProjectWorkbenchContext } from '../components/layout/ProjectWorkbenchLayout'
 const PHASE_LABELS = ['', '机制设计', '剧本创作', '视觉物料', '用户测试', '商业化', '印刷生产', '宣发内容', '社区运营']
 
-type RunMode = 'phase' | 'expand' | 'audit'
-
 export default function PhaseExecution() {
-  const { name, stage } = useParams<{ name: string; stage: string }>()
+  const { stage } = useParams<{ stage: string }>()
   const navigate = useNavigate()
+  const { projectName, refreshWorkbench } = useProjectWorkbenchContext()
   const [running, setRunning] = useState(false)
   const [output, setOutput] = useState<Array<{ type: string; content: string }>>([])
   const [currentStep, setCurrentStep] = useState('')
@@ -16,8 +17,8 @@ export default function PhaseExecution() {
   const [complete, setComplete] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [forceAudit, setForceAudit] = useState(false)
+  const [analyze, setAnalyze] = useState(false)
   const outputRef = useRef<HTMLDivElement>(null)
-  const projectName = decodeURIComponent(name || '')
   const stageNum = parseInt(stage || '0')
   const mode: RunMode = stage === 'expand' ? 'expand' : stage === 'audit' ? 'audit' : 'phase'
 
@@ -44,52 +45,48 @@ export default function PhaseExecution() {
     setCurrentStep('')
     setTotalCost(0)
 
-    let url: string
-    if (mode === 'expand') url = `/api/projects/${encodeURIComponent(projectName)}/expand`
-    else if (mode === 'audit') url = `/api/projects/${encodeURIComponent(projectName)}/audit${forceAudit ? '?force=true' : ''}`
-    else url = `/api/projects/${encodeURIComponent(projectName)}/phases/${stageNum}/run`
+    if (mode === 'expand') {
+      const ok = window.confirm(
+        '扩写会在 characters/background/scripts_b 原文之后追加内容，并整份重新生成 information_matrix、dm_manual、endings 与矩阵 JSON；覆盖前会备份 8 个文件（含 session.json）。确认开始？'
+      )
+      if (!ok) {
+        setRunning(false)
+        return
+      }
+    }
 
-    const controller = new AbortController()
+    let sawCompletion = false
+    let endStatus: string | null = null
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-        signal: controller.signal,
-      })
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Request failed' }))
-        throw new Error(err.detail || `HTTP ${res.status}`)
-      }
-
-      const reader = res.body?.getReader()
-      if (!reader) throw new Error('No response body')
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('event:') && !line.startsWith('data:')) continue
-          const eventMatch = line.match(/^event: (\w+)/)
-          const dataMatch = line.match(/^data: (.+)/)
-          if (eventMatch && dataMatch) {
-            handleEvent({ type: eventMatch[1], data: JSON.parse(dataMatch[1]) } as SSEEvent)
+      await runPhaseStream({
+        projectName,
+        mode,
+        stage: stageNum,
+        forceAudit,
+        acceptOverwrite: mode === 'expand',
+        analyze: mode === 'phase' && stageNum === 4 && analyze,
+        onEvent: (event) => {
+          handleEvent(event)
+          if (event.type === 'end') endStatus = String(event.data.status ?? 'failed')
+          if (event.type === 'stage_complete' || event.type === 'audit_complete' || event.type === 'expand_complete') {
+            sawCompletion = true
           }
-        }
-      }
+        },
+      })
     } catch (e: unknown) {
-      if ((e as Error).name !== 'AbortError') {
-        setError(e instanceof Error ? e.message : '运行失败')
-      }
+      setError(e instanceof Error ? e.message : '运行失败')
     } finally {
+      if (sawCompletion) {
+        await refreshWorkbench()
+      }
       setRunning(false)
-      setComplete(true)
+      // 成败只看终态事件：HTTP 200 或连接结束都不代表业务成功
+      setComplete(endStatus === 'success')
+      if (endStatus === null) {
+        setError((prev) => prev ?? '连接中断：没有收到终态事件，结果未知，请刷新作品状态确认')
+      } else if (endStatus !== 'success') {
+        setError((prev) => prev ?? (endStatus === 'cancelled' ? '已取消（正在进行的模型调用不会被打断，可能仍在结束中）' : '运行未成功，详见上方输出'))
+      }
     }
   }
 
@@ -112,16 +109,19 @@ export default function PhaseExecution() {
         appendOutput('system', `产物: ${event.data.filename}`)
         break
       case 'stage_complete':
-        appendOutput('system', `阶段完成 · 消耗: $${(event.data.total_cost as number).toFixed(4)}`)
-        setComplete(true)
+        appendOutput(event.data.success === false ? 'error' : 'system', `阶段${event.data.success === false ? '失败' : '完成'} · 消耗: $${Number(event.data.total_cost ?? 0).toFixed(4)}`)
         break
       case 'audit_complete':
-        appendOutput('system', `审计完成 · 消耗: $${(event.data.total_cost as number).toFixed(4)}`)
-        setComplete(true)
+        appendOutput(
+          event.data.status === 'passed' ? 'system' : 'error',
+          `审计结论：${event.data.status} · 未豁免 P0=${event.data.p0_unresolved ?? '?'} · 消耗: $${Number(event.data.total_cost ?? 0).toFixed(4)}`
+        )
         break
       case 'expand_complete':
-        appendOutput('system', `扩写完成 · 消耗: $${(event.data.total_cost as number).toFixed(4)}`)
-        setComplete(true)
+        appendOutput(
+          event.data.success ? 'system' : 'error',
+          `扩写${event.data.success ? '完成' : '未完成'}（${event.data.status}）· 消耗: $${Number(event.data.total_cost ?? 0).toFixed(4)}`
+        )
         break
       case 'error':
         appendOutput('error', `错误: ${event.data.message}`)
@@ -187,6 +187,28 @@ export default function PhaseExecution() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          {mode === 'phase' && stageNum === 4 && (
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                fontFamily: "'Crimson Pro', serif",
+                fontSize: '13px',
+                color: 'var(--text-muted)',
+                cursor: running ? 'default' : 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={analyze}
+                disabled={running}
+                onChange={(e) => setAnalyze(e.target.checked)}
+                style={{ accentColor: 'var(--accent-crimson)' }}
+              />
+              分析反馈（读取 feedback.md）
+            </label>
+          )}
           {mode === 'audit' && (
             <label
               style={{

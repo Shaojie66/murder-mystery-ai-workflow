@@ -1,5 +1,7 @@
 # Engineering Review: murder-wizard
 
+> **适用状态更新（2026-10-24）**：这是 2026-04-01 的历史审查，部分问题已修复或发生变化；不得将旧测试数量、结论和修复状态当作当前证据。 当前已复现问题、范围与验收见[本地可靠性 MVP 方案](./docs/reliability-mvp-plan.md)。
+
 Date: 2026-04-01
 Reviewer: /plan-eng-review
 Scope: Full codebase architecture, security, test coverage, code quality

@@ -25,13 +25,20 @@ npm run dev
 ### Docker 部署
 
 ```bash
+cp murder_wizard_web/.env.example murder_wizard_web/.env
+# 编辑 murder_wizard_web/.env，至少设置 JWT_SECRET_KEY 和一个可用的 LLM provider
+
 cd murder_wizard_web
 
 # 构建并启动
-docker-compose up -d
+docker compose up -d --build
 
 # 查看日志
-docker-compose logs -f
+docker compose logs -f
+
+# 健康检查
+docker compose ps
+curl http://localhost:8000/api/health
 ```
 
 访问 http://localhost:3000
@@ -40,9 +47,47 @@ docker-compose logs -f
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `LLM_PROVIDER` | `claude` | LLM 提供商: `claude`, `openai`, `ollama` |
+| `JWT_SECRET_KEY` | `change-me-in-production` | 生产必须替换，JWT 签名密钥 |
+| `ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | 后端 CORS 白名单 |
+| `LLM_PROVIDER` | `claude` | LLM 提供商: `claude`, `openai`, `ollama`, `minimax` |
 | `ANTHROPIC_API_KEY` | - | Claude API 密钥 |
 | `OPENAI_API_KEY` | - | OpenAI API 密钥 |
+| `MINIMAX_API_KEY` | - | MiniMax API 密钥 |
+| `MINIMAX_BASE_URL` | `https://api.minimax.io/anthropic` | MiniMax Anthropic 兼容入口 |
+| `MINIMAX_MODEL` | `MiniMax-M2.7` | MiniMax 模型名 |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434/v1` | Docker 内访问宿主机 Ollama 的地址 |
+| `OLLAMA_MODEL` | `qwen3:0.6b` | Ollama 模型名 |
+| `OLLAMA_API_KEY` | `ollama` | Ollama OpenAI 兼容占位 API key |
+
+## 推荐部署方案
+
+### 方案 A：云端 LLM
+
+适合公网部署，不依赖宿主机模型服务。
+
+```bash
+LLM_PROVIDER=claude
+ANTHROPIC_API_KEY=...
+JWT_SECRET_KEY=...
+```
+
+### 方案 B：宿主机 Ollama
+
+适合你当前这种本机或内网部署。
+
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+OLLAMA_MODEL=qwen3:0.6b
+JWT_SECRET_KEY=...
+```
+
+启动前先确认宿主机 Ollama 可用：
+
+```bash
+curl http://127.0.0.1:11434/api/tags
+curl http://127.0.0.1:11434/v1/models
+```
 
 ## 功能模块
 
@@ -99,6 +144,7 @@ murder_wizard_web/
 | GET | `/projects` | 列出所有项目 |
 | POST | `/projects` | 创建项目 |
 | GET | `/projects/{name}` | 获取项目详情 |
+| GET | `/projects/{name}/workbench` | 获取项目工作台主读模型 |
 | DELETE | `/projects/{name}` | 删除项目 |
 | POST | `/projects/{name}/phases/{stage}/run` | 运行指定阶段 (SSE) |
 | POST | `/projects/{name}/expand` | 原型扩写 (SSE) |

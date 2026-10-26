@@ -30,10 +30,20 @@ class LLMCache:
                 self._cache = {}
 
     def _save(self) -> None:
-        """原子写入缓存到磁盘（写 temp 再 rename）"""
+        """原子写入缓存到磁盘（写 temp 再 rename）
+
+        先在内存里编码一遍：含孤立代理项等无法编码为 UTF-8 的文字在这里就抛出，不会先建出一个空的 .tmp；
+        写入或替换中途失败也清掉 .tmp。磁盘上的格式不变。
+        """
+        text = json.dumps(self._cache, ensure_ascii=False, indent=2)
+        text.encode("utf-8")
         tmp = self.cache_file.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(self._cache, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.rename(self.cache_file)
+        try:
+            tmp.write_text(text, encoding="utf-8")
+            tmp.replace(self.cache_file)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
     def _make_key(self, operation: str, prompt: str, system: str, model: str) -> str:
         """生成缓存键"""
@@ -56,9 +66,14 @@ class LLMCache:
             )
 
     def set(self, operation: str, prompt: str, system: str, model: str, response: LLMResponse) -> None:
-        """写入缓存（线程安全）"""
+        """写入缓存（线程安全）
+
+        写盘失败（磁盘满、回复里有无法编码的字符……）时恢复调用前的内存状态再抛出：
+        否则这条没存成功的回复会留在内存里被后续 get() 重放，之后每一次 set() 也都会因它写盘失败。
+        """
         with self._lock:
             key = self._make_key(operation, prompt, system, model)
+            previous = self._cache.get(key)
             self._cache[key] = {
                 "content": response.content,
                 "tokens_used": response.tokens_used,
@@ -66,7 +81,28 @@ class LLMCache:
                 "model": response.model,
                 "operation": operation,
             }
+            try:
+                self._save()
+            except BaseException:
+                if previous is None:
+                    del self._cache[key]
+                else:
+                    self._cache[key] = previous
+                raise
+
+    def invalidate(self, operation: str, prompt: str, system: str, model: str) -> bool:
+        """删除这一次调用对应的缓存条目（线程安全）。
+
+        用于调用方校验后拒绝了响应的场景：不删的话，重试会永远命中同一个被拒绝的响应。
+        只删与 (operation, prompt, system, model) 完全匹配的条目；返回是否确实删除了条目。
+        """
+        with self._lock:
+            key = self._make_key(operation, prompt, system, model)
+            if key not in self._cache:
+                return False
+            del self._cache[key]
             self._save()
+            return True
 
     def clear(self) -> None:
         """清空缓存（线程安全）"""

@@ -1,13 +1,17 @@
 """Information matrix API endpoints."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from pathlib import Path
-from typing import Optional
 
+from core.auth_deps import require_auth
 from murder_wizard.wizard.truth_files import TruthFileManager
 from murder_wizard.wizard.schemas import CognitiveState
 
-router = APIRouter(prefix="/api/projects/{project_name}/matrix", tags=["matrix"])
+router = APIRouter(
+    prefix="/api/projects/{project_name}/matrix",
+    tags=["matrix"],
+    dependencies=[Depends(require_auth)],
+)
 
 MURDER_WIZARD_BASE = Path.home() / ".murder-wizard" / "projects"
 

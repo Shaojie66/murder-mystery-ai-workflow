@@ -1,5 +1,7 @@
 # 剧本创作 Prompt
 
+> **运行时说明**：阶段 2 现已按步骤使用独立模板：`02_q1_matrix.md`、`02_q2_background.md`、`02_q3_script_a.md`、`02_q4_script_b.md`、`02_q5_dm_manual.md`、`02_q6_endings.md`。本文件仅保留为 Q1-Q6 的整体参考，运行时不再加载；其中 Q1 的 JSON 示例与现有 schema 不符，不要照抄。
+
 > 适用于 Claude / GPT-4o
 
 ---

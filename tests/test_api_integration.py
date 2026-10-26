@@ -7,8 +7,8 @@ The conftest.py session-scoped fixture sets HOME to an isolated temp directory
 BEFORE any modules are imported, so MURDER_WIZARD_BASE is correctly isolated
 from the start.
 """
+import json
 import pytest
-import os
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -66,6 +66,15 @@ def auth_headers():
 
 class TestProjectsAPI:
     """Test /api/projects endpoints."""
+
+    def test_list_projects_requires_auth(self):
+        """GET /api/projects rejects unauthenticated access."""
+        from fastapi.testclient import TestClient
+        from murder_wizard_web.backend.main import app
+
+        with TestClient(app) as client:
+            response = client.get("/api/projects")
+            assert response.status_code == 401
 
     def test_create_project_all_five_types(self, auth_headers):
         """POST /api/projects creates projects for all 5 story types."""
@@ -138,6 +147,41 @@ class TestProjectsAPI:
                 assert response.status_code == 200
                 assert client.get("/api/projects/to-delete", headers=auth_headers).status_code == 404
 
+    @pytest.mark.parametrize("bad_name", ["../escape", "..", ".hidden", "/tmp/x", "bad/name"])
+    def test_create_project_rejects_path_traversal_names(self, auth_headers, bad_name):
+        """Project creation rejects invalid names before touching disk."""
+        from fastapi.testclient import TestClient
+        from murder_wizard_web.backend.main import app
+
+        with patch("murder_wizard.llm.client.create_llm_adapter", _mock_llm_factory()):
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/api/projects",
+                    json={
+                        "name": bad_name,
+                        "story_type": "mechanic",
+                        "is_prototype": True,
+                        "era": "现代",
+                        "answers": {},
+                    },
+                    headers=auth_headers,
+                )
+                assert create_response.status_code == 400
+
+    @pytest.mark.parametrize("bad_name", [".hidden"])
+    def test_get_delete_project_reject_invalid_segment_names(self, auth_headers, bad_name):
+        """Get/delete endpoints reject invalid path-segment names that reach the handler."""
+        from fastapi.testclient import TestClient
+        from murder_wizard_web.backend.main import app
+
+        with patch("murder_wizard.llm.client.create_llm_adapter", _mock_llm_factory()):
+            with TestClient(app) as client:
+                get_response = client.get(f"/api/projects/{bad_name}", headers=auth_headers)
+                assert get_response.status_code == 400
+
+                delete_response = client.delete(f"/api/projects/{bad_name}", headers=auth_headers)
+                assert delete_response.status_code == 400
+
     def test_list_projects_returns_correct_count(self, auth_headers):
         """GET /api/projects returns exactly the projects created in this test."""
         from fastapi.testclient import TestClient
@@ -162,6 +206,140 @@ class TestProjectsAPI:
                 names = [p["name"] for p in data["projects"]]
                 assert set(names) == set(created), f"Expected {set(created)}, got {set(names)}"
 
+    def test_create_project_generates_outline_and_full_mode_brief(self, auth_headers):
+        """Create flow persists brief.md, outline.md, and session outline for full mode."""
+        from fastapi.testclient import TestClient
+        from murder_wizard_web.backend.main import app
+
+        with patch("murder_wizard.llm.client.create_llm_adapter", _mock_llm_factory()):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/projects",
+                    json={
+                        "name": "full-mode",
+                        "story_type": "reasoning",
+                        "is_prototype": False,
+                        "era": "民国",
+                        "answers": {"核心冲突": "真相 vs 忠诚"},
+                    },
+                    headers=auth_headers,
+                )
+                assert response.status_code == 200
+
+        project_path = _MURDER_WIZARD_BASE / "full-mode"
+        brief = (project_path / "brief.md").read_text(encoding="utf-8")
+        outline = (project_path / "outline.md").read_text(encoding="utf-8")
+        session_data = json.loads((project_path / "session.json").read_text(encoding="utf-8"))
+
+        assert "完整模式（6人）" in brief
+        assert outline == "# 机制设计\n\nmock content"
+        assert session_data["outline"] == outline
+
+    def test_create_project_rolls_back_on_outline_failure(self, auth_headers):
+        """Outline bootstrap failure does not leave a half-created project behind."""
+        from fastapi.testclient import TestClient
+        from murder_wizard_web.backend.main import app
+
+        def _failing_factory(provider=None, settings=None):
+            mock = MagicMock()
+            mock.complete.side_effect = RuntimeError("outline failed")
+            return mock
+
+        with patch("murder_wizard.llm.client.create_llm_adapter", _failing_factory):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/projects",
+                    json={
+                        "name": "broken-outline",
+                        "story_type": "mechanic",
+                        "is_prototype": True,
+                        "era": "现代",
+                        "answers": {},
+                    },
+                    headers=auth_headers,
+                )
+
+        assert response.status_code == 502
+        assert not (_MURDER_WIZARD_BASE / "broken-outline").exists()
+
+    def test_workbench_repairs_missing_outline_and_returns_read_model(self, auth_headers):
+        """Workbench request repairs missing outline state and returns grouped workbench DTO."""
+        from fastapi.testclient import TestClient
+        from murder_wizard.wizard.session import SessionManager
+        from murder_wizard.wizard.state_machine import MurderWizardState, Stage
+        from murder_wizard_web.backend.main import app
+
+        project_path = _MURDER_WIZARD_BASE / "repair-me"
+        project_path.mkdir(parents=True, exist_ok=True)
+        (project_path / "brief.md").write_text("# brief", encoding="utf-8")
+
+        session = SessionManager("repair-me")
+        session.save(
+            MurderWizardState(
+                project_name="repair-me",
+                story_type="mechanic",
+                current_stage=Stage.IDLE,
+                outline="",
+                is_prototype=True,
+            )
+        )
+
+        with patch("murder_wizard.llm.client.create_llm_adapter", _mock_llm_factory()):
+            with TestClient(app) as client:
+                response = client.get("/api/projects/repair-me/workbench", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert set(data.keys()) == {"project", "workflow", "readiness", "artifacts", "quick_actions"}
+        assert data["readiness"]["outline_ready"] is True
+        assert data["project"]["artifacts"]["outline.md"]["exists"] is True
+        assert (project_path / "outline.md").read_text(encoding="utf-8") == "# 机制设计\n\nmock content"
+
+    def test_project_scoped_routes_require_auth(self, auth_headers):
+        """All project-scoped routes reject missing auth and allow authenticated access."""
+        from fastapi.testclient import TestClient
+        from murder_wizard_web.backend.main import app
+
+        with patch("murder_wizard.llm.client.create_llm_adapter", _mock_llm_factory()):
+            with TestClient(app) as client:
+                create = client.post(
+                    "/api/projects",
+                    json={"name": "auth-scope", "story_type": "mechanic", "is_prototype": True, "era": "现代", "answers": {}},
+                    headers=auth_headers,
+                )
+                assert create.status_code == 200
+
+                unauth_routes = [
+                    ("get", "/api/projects/auth-scope"),
+                    ("get", "/api/projects/auth-scope/workbench"),
+                    ("get", "/api/projects/auth-scope/files"),
+                    ("get", "/api/projects/auth-scope/phases/1/status"),
+                    ("post", "/api/projects/auth-scope/phases/1/run"),
+                    ("post", "/api/projects/auth-scope/expand"),
+                    ("post", "/api/projects/auth-scope/audit"),
+                    ("get", "/api/projects/auth-scope/audit/report"),
+                    ("get", "/api/projects/auth-scope/matrix"),
+                    ("get", "/api/projects/auth-scope/costs"),
+                ]
+
+                for method, url in unauth_routes:
+                    response = getattr(client, method)(url)
+                    assert response.status_code == 401, f"{method.upper()} {url} should require auth"
+
+                auth_routes = [
+                    ("get", "/api/projects/auth-scope"),
+                    ("get", "/api/projects/auth-scope/workbench"),
+                    ("get", "/api/projects/auth-scope/files"),
+                    ("get", "/api/projects/auth-scope/phases/1/status"),
+                    ("get", "/api/projects/auth-scope/audit/report"),
+                    ("get", "/api/projects/auth-scope/matrix"),
+                    ("get", "/api/projects/auth-scope/costs"),
+                ]
+
+                for method, url in auth_routes:
+                    response = getattr(client, method)(url, headers=auth_headers)
+                    assert response.status_code != 401, f"{method.upper()} {url} should allow auth"
+
 
 class TestPhasesAPI:
     """Test /api/projects/{name}/phases/* endpoints."""
@@ -183,8 +361,8 @@ class TestPhasesAPI:
                 data = response.json()
                 assert data["running"] == False
 
-    def test_cancel_returns_cancelled_true(self, auth_headers):
-        """Cancel endpoint always returns cancelled=True."""
+    def test_cancel_without_running_task_reports_nothing_cancelled(self, auth_headers):
+        """取消只是请求：没有运行中的任务时 cancel_requested=False，且从不宣称已停止。"""
         from fastapi.testclient import TestClient
         from murder_wizard_web.backend.main import app
 
@@ -192,4 +370,5 @@ class TestPhasesAPI:
             with TestClient(app) as client:
                 response = client.post("/api/projects/nonexistent/phases/1/cancel", headers=auth_headers)
                 assert response.status_code == 200
-                assert response.json()["cancelled"] == True
+                body = response.json()
+                assert body["cancel_requested"] is False and body["stopped"] is False
